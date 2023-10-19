@@ -1,0 +1,37 @@
+## Hi, this was the output from the script I ran:
+$ > ./dune-common/bin/duneproject dune-eigensolver 
+
+A sample code dune-eigensolver.cc is generated in the "dune-eigensolver" directory.       
+Look at the README and dune.module files there.                                           
+Now you can run the dunecontrol script which will setup the new module.                  
+Sometimes you may have to tweak CMakeLists.txt a bit.                                    
+------------------------------------------                                               
+writing initial files:                                                                   
+- dune-eigensolver/README                                                                
+- dune-eigensolver/CMakeLists.txt                                                        
+- dune-eigensolver/dune-eigensolver.pc.in                                                
+    Please remember to update your dune-eigensolver/dune-eigensolver.pc.in,              
+    Description and URL are missing right now.                                           
+- dune-eigensolver/config.h.cmake                                                        
+- dune-eigensolver/src/CMakeLists.txt                                                    
+- dune-eigensolver/src/dune-eigensolver.cc                                               
+- dune-eigensolver/dune/eigensolver                                                      
+- dune-eigensolver/dune/CMakeLists.txt                                                   
+- dune-eigensolver/dune/eigensolver/CMakeLists.txt                                       
+- dune-eigensolver/dune/eigensolver/eigensolver.hh                                       
+- dune-eigensolver/doc/CMakeLists.txt                                                    
+- dune-eigensolver/doc/doxygen/Doxylocal                                                 
+Doxygen is not installed! Your documentation will not work without it.                   
+- dune-eigensolver/doc/doxygen/CMakeLists.txt                                            
+- dune-eigensolver/cmake/modules/CMakeLists.txt                                          
+- dune-eigensolver/cmake/modules/DuneEigensolverMacros.cmake                             
+                                                                                         
+done.                                                                                    
+------------------------------------------                                               
+For further details read the Dune build system documentation at                          
+https://www.dune-project.org/buildsystem/
+
+## I have now copied the raes subdirectory from the dune-ftworth
+## The next steps are the following
+x edit cmakelists to build raes. a hint is to look into dune-ftworth and immitate
+x make the gram-shmidt tests like in src/dune-ftworth.cc

@@ -1,0 +1,12 @@
+################################
+# Dune module information file #
+################################
+
+# Name of the module
+Module: dune-eigensolver
+Version: 0.1
+Maintainer: sanchi.vaishnavi@stud.uni-heidelberg.de
+# Required build dependencies
+Depends: dune-common dune-istl
+# Optional build dependencies
+#Suggests:
