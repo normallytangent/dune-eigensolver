@@ -30,8 +30,3 @@ done.
 ------------------------------------------                                               
 For further details read the Dune build system documentation at                          
 https://www.dune-project.org/buildsystem/
-
-## I have now copied the raes subdirectory from the dune-ftworth
-## The next steps are the following
-x edit cmakelists to build raes. a hint is to look into dune-ftworth and immitate
-x make the gram-shmidt tests like in src/dune-ftworth.cc
