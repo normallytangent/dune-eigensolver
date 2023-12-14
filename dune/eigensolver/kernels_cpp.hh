@@ -656,6 +656,24 @@ void matmul_sparse_tallskinny_blocked(MV &Qout, const ISTLM &A, const MV &Qin)
   }
 }
 
+/** @brief Calculate the norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+template <typename MV>
+double stopping_criterion(std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+  std::size_t b = MV::blocksize;
+
+  double partial = 0.0;
+  double norm = 0.0;
+  for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
+    for (std::size_t i = 0; i < Q1.rows(); ++i)
+      for (std::size_t j = 0; j < b; ++j)
+        partial += (Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j))*(Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j));
+
+  norm = std::sqrt(partial);
+  return norm;
+}
+
 //! Apply inverse in factorized form; you may overwrite the input argument
 template <typename MV, typename MAT>
 void matmul_inverse_tallskinny_blocked(MV &Qout, UMFPackFactorizedMatrix<MAT> &F, MV &Qin)
@@ -753,5 +771,7 @@ void matmul_inverse_tallskinny_blocked(MV &Qout, UMFPackFactorizedMatrix<MAT> &F
     }
   }
 }
+
+
 
 #endif

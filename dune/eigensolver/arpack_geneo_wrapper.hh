@@ -22,9 +22,10 @@
 #include <dune/common/fvector.hh>    // provides Dune::FieldVector
 #include <dune/common/exceptions.hh> // provides DUNE_THROW(...)
 
-//#if DUNE_VERSION_GTE(DUNE_ISTL, 2, 9)
+//#if DUNE_VERSION_GTE(DUNE_ISTL, 2, 8)
 #include <dune/istl/blocklevel.hh>
 //#endif
+#include <dune/istl/eigenvalue/arpackpp.hh>
 #include <dune/istl/bvector.hh>       // provides Dune::BlockVector
 #include <dune/istl/istlexception.hh> // provides Dune::ISTLError
 #include <dune/istl/io.hh>            // provides Dune::printvector(...)
@@ -43,6 +44,8 @@
 #include "arsnsym.h" // this provides the one we need
 #include "arssym.h"  // this provides the one we need
 
+// @NOTE We still need the arpack in order to compare our results, especially in the
+// case of geneo where there is no analytical solution.
 namespace ArpackMLGeneo
 {
 
@@ -76,7 +79,7 @@ namespace ArpackMLGeneo
           a_(A_.M() * mBlock), n_(A_.N() * nBlock)
     {
       // assert that BCRSMatrix type has blocklevel 2
-//#if DUNE_VERSION_LT(DUNE_ISTL, 2, 9)
+//#if DUNE_VERSION_LT(DUNE_ISTL, 2, 8)
 //      static_assert(BCRSMatrix::blocklevel == 2,
 //                    "Only BCRSMatrices with blocklevel 2 are supported.");
 //#else
@@ -422,6 +425,154 @@ namespace ArpackMLGeneo
           title_("    ArPackPlusPlus_Algorithms: "),
           blank_(title_.length(), ' ')
     {
+    }
+
+    //! Solve GEVP as standard problem with own shift
+    inline void computeStdSymMaxMagnitude(const Real &epsilon,
+                                             std::vector<BlockVector> &x, std::vector<Real> &lambda) const
+    {
+      // print verbosity information
+      if (verbosity_level_ > 0)
+        std::cout << title_ << "Computing an approximation of the "
+                  << "least dominant eigenvalue of a matrix which "
+                  << "is assumed to be symmetric." << std::endl;
+
+      // allocate memory for variables, set parameters
+      const int nev = x.size();                // Number of eigenvalues to compute
+      const int ncv = 0;                       // Number of Arnoldi vectors generated at each iteration (0 == auto)
+      const Real tol = epsilon;                // Stopping tolerance (relative accuracy of Ritz values) (0 == machine precision)
+      const int maxit = nIterationsMax_ * nev; // Maximum number of Arnoldi update iterations allowed   (0 == 100*nev)
+      auto ev = std::vector<Real>(nev);        // Computed generalized eigenvalues
+      auto ev_imag = std::vector<Real>(nev);   // Computed generalized eigenvalues
+      const bool ivec = true;                  // Flag deciding if eigenvectors shall be determined
+
+ //      BCRSMatrix ashiftb(a_);
+
+ //   typedef APP_BCRSMatMul_OwnShiftMode<BCRSMatrix> WrappedMatrix;
+ //     WrappedMatrix A(ashiftb, b_);
+      typedef Dune::Impl::ArPackPlusPlus_BCRSMatrixWrapper<BCRSMatrix> WrappedMatrix;
+      WrappedMatrix A(a_);
+
+      // get number of rows and columns in A
+      const int nrows = A.nrows();
+      const int ncols = A.ncols();
+
+      // assert that A is square
+      if (nrows != ncols)
+        DUNE_THROW(Dune::ISTLError, "Matrix is not square ("
+                                        << nrows << "x" << ncols << ").");
+
+      // define what we need: eigenvalues with largest magnitude
+      char which[] = "LM";
+
+      // Solve problem as a standard EV problem
+      ARSymStdEig<Real, WrappedMatrix> dprob(nrows, nev, &A, &WrappedMatrix::multMv, which, ncv, tol, maxit);
+
+      // set ARPACK verbosity mode if requested
+      if (verbosity_level_ > 3)
+        dprob.Trace();
+
+      // find eigenvalues and eigenvectors of A
+      // The broken interface of ARPACK++ actually wants a reference to a pointer...
+      auto ev_data = ev.data();
+      auto ev_imag_data = ev_imag.data();
+      dprob.Eigenvalues(ev_data, ev_imag_data, ivec);
+
+      // Get sorting permutation for un-shifted eigenvalues
+      std::vector<int> index(nev, 0);
+      std::iota(index.begin(), index.end(), 0);
+
+      std::sort(index.begin(), index.end(),
+                [&](const int &a, const int &b)
+                {
+                  return (ev[a] < ev[b]);
+                });
+
+      // Unshift eigenpairs
+      for (int i = 0; i < nev; i++)
+      {
+        lambda[i] = ev[index[i]];
+        Real *x_raw = dprob.RawEigenvector(index[i]);
+        WrappedMatrix::arrayToDomainBlockVector(x_raw, x[i]);
+      }
+
+      // obtain number of Arnoldi update iterations actually taken
+      nIterations_ = dprob.GetIter();
+    }
+
+    //! Solve GEVP as standard problem with own shift
+    // @NOTE Change the function name later! Saturday, 25. November 2023 at 22:17:29
+    inline void computeGEVPStdSymMaxMagnitude(const BCRSMatrix &b_, const Real &epsilon,
+                                             std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
+    {
+      // print verbosity information
+      if (verbosity_level_ > 0)
+        std::cout << title_ << "Computing an approximation of the "
+                  << "least dominant eigenvalue of a matrix which "
+                  << "is assumed to be symmetric." << std::endl;
+
+      // allocate memory for variables, set parameters
+      const int nev = x.size();                // Number of eigenvalues to compute
+      const int ncv = 0;                       // Number of Arnoldi vectors generated at each iteration (0 == auto)
+      const Real tol = epsilon;                // Stopping tolerance (relative accuracy of Ritz values) (0 == machine precision)
+      const int maxit = nIterationsMax_ * nev; // Maximum number of Arnoldi update iterations allowed   (0 == 100*nev)
+      auto ev = std::vector<Real>(nev);        // Computed generalized eigenvalues
+      auto ev_imag = std::vector<Real>(nev);   // Computed generalized eigenvalues
+      const bool ivec = true;                  // Flag deciding if eigenvectors shall be determined
+
+      BCRSMatrix ashiftb(a_);
+      ashiftb.axpy(-sigma, b_);
+
+      // use type ArPackPlusPlus_BCRSMatrixWrapperGen to store matrix information
+      // and to perform the product (A-sigma B)^-1 v (LU decomposition is not used)
+      typedef APP_BCRSMatMul_OwnShiftMode<BCRSMatrix> WrappedMatrix;
+      WrappedMatrix A(ashiftb, b_);
+
+      // get number of rows and columns in A
+      const int nrows = A.nrows();
+      const int ncols = A.ncols();
+
+      // assert that A is square
+      if (nrows != ncols)
+        DUNE_THROW(Dune::ISTLError, "Matrix is not square ("
+                                        << nrows << "x" << ncols << ").");
+
+      // define what we need: eigenvalues with largest magnitude
+      char which[] = "LM";
+
+      // Solve problem as a standard EV problem with own shift
+      ARSymStdEig<Real, WrappedMatrix> dprob(nrows, nev, &A, &WrappedMatrix::multMv, which, ncv, tol, maxit);
+
+      // set ARPACK verbosity mode if requested
+      if (verbosity_level_ > 3)
+        dprob.Trace();
+
+      // find eigenvalues and eigenvectors of A
+      // The broken interface of ARPACK++ actually wants a reference to a pointer...
+      auto ev_data = ev.data();
+      auto ev_imag_data = ev_imag.data();
+      dprob.Eigenvalues(ev_data, ev_imag_data, ivec);
+
+      // Get sorting permutation for un-shifted eigenvalues
+      std::vector<int> index(nev, 0);
+      std::iota(index.begin(), index.end(), 0);
+
+      std::sort(index.begin(), index.end(),
+                [&](const int &a, const int &b)
+                {
+                  return (sigma + 1. / ev[a] < sigma + 1. / ev[b]);
+                });
+
+      // Unshift eigenpairs
+      for (int i = 0; i < nev; i++)
+      {
+        lambda[i] = sigma + 1. / ev[index[i]];
+        Real *x_raw = dprob.RawEigenvector(index[i]);
+        WrappedMatrix::arrayToDomainBlockVector(x_raw, x[i]);
+      }
+
+      // obtain number of Arnoldi update iterations actually taken
+      nIterations_ = dprob.GetIter();
     }
 
     //! Solve GEVP as standard problem with own shift invert
