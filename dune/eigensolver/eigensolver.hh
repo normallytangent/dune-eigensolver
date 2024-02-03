@@ -88,9 +88,6 @@ void StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxit
      for (auto &x : s1)
        x -= shift;
 
-     // orthonormalize again
-     orthonormalize_blocked(Q2);
-
      // || Q1 * diag(D) - Q2 ||; 
      if (k == 1)
        initial_norm = stopping_criterion(s1, Q1, Q2);
@@ -98,6 +95,9 @@ void StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxit
      double frobenieus_norm = 0.0;
      frobenieus_norm = stopping_criterion(s1, Q1, Q2);
      std::cout << k << ": "<< frobenieus_norm << std::endl;
+
+     // orthonormalize again for the next iteration
+     orthonormalize_blocked(Q2);
 
      double distance = 0.0;
      distance = std::max(distance, std::abs(frobenieus_norm - (tol * initial_norm)));
