@@ -669,7 +669,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
   arpack.computeStdSymMaxMagnitude(1e-14, eigenvectors, eigenvalues_arpack);
 
-  // now compute eigenvalues with given tolerance in arpack
+  // Now compute eigenvalues with given tolerance in arpack
   std::vector<double> eigenvalues_arpack2(m, 0.0);
   Dune::Timer timer_arpack;
   timer_arpack.reset();
@@ -682,13 +682,13 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   for (int i = 0; i < m; i++)
     maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[m-i-1] - eigenvalues_arpack[m-i-1]));
 
-  // then compute the largest eigenvalue with ISTL's arpack wrapper
+  // Then compute the largest eigenvalue with ISTL's arpack wrapper
   Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(A);
   double w = 0.0;
   arp.computeSymMaxMagnitude(tol,vec,w);
   std::cout << " " << w << std::endl;
 
-  // next compute eigenvalues with given tolerance in eigensolver
+  // Next compute eigenvalues with given tolerance in eigensolver
   std::vector<double> eval(m, 0.0); 
   std::vector<std::vector<double>> evec(m);
   for (auto &v : evec)
@@ -708,7 +708,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed);
   auto time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
 
-   // finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically 
+   // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically 
    std::vector<double> eigenvalues_analytical(N, 0.0);
    eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
    double maxerror3 = 0.0;
