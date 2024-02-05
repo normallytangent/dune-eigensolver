@@ -626,6 +626,25 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   return 0;
 }
 
+void RelativeResidual(std::vector<double> &eval,std::vector<double> &evalstop , std::vector<double> &true_eval)
+{
+  std::cout << std::endl;
+  double reltolev = 0;
+  double reltolevs = 0;
+  for (int i = 0; i < eval.size(); i++){
+
+    reltolev = eval[i] - true_eval[true_eval.size()-i-1];
+    reltolev = reltolev / true_eval[true_eval.size()-i-1];
+    reltolevs = evalstop[i] - true_eval[true_eval.size()-i-1];
+    reltolevs = reltolevs / true_eval[true_eval.size()-i-1];
+
+    std::cout << std::setw(16)
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(1)
+              << abs(reltolev) << "   " << abs(reltolevs) << std::endl;
+  }
+}
 // this must be called sequentially
 int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
