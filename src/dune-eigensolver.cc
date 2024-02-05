@@ -698,6 +698,11 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
   auto time_eigensolver = timer_eigensolver.elapsed();
 
+  double maxerror = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[m-i-1]));
+
+  // Also compute eigenvalues with given tolerance and new stopping criterion in eigensolver
   std::vector<double> evalstop(m, 0.0); 
   std::vector<std::vector<double>> evecstop(m);
   for (auto &v : evecstop)
@@ -717,6 +722,10 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
    double maxerror4 = 0.0;
    for (int i = 0; i < m; ++i)
      maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
+
+  double maxerror5 = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[m-i-1]));
 
   // Printer
   std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER" 
