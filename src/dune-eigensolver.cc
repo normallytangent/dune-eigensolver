@@ -153,7 +153,7 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_identity(int N)
   for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
     for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
       if (row_iter.index() == col_iter.index())
-        (*col_iter)[0][0] = 1.0;
+        (*col_iter)[0][0] = 1.0; // scaled the problem to check the type of tolerance(relative or absolute, if former, the error would have scaled by 10 as well!) (*col_iter)*10.0;
       else
         (*col_iter)[0][0] = 0.0;
   return A;
@@ -613,7 +613,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack2[i])); // @NOTE Same comment
                                                                                // as above.
   std::cout << "N_M_TOL_RASERROR_ARPERROR_TIMERATIO_ARPACKITER " << std::endl;
-  
+
   std::cout  << n << " & "
             << m << " & "
             << tol << " & "
@@ -698,7 +698,6 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
   auto time_eigensolver = timer_eigensolver.elapsed();
 
-  // next compute eigenvalues with given tolerance and new stopping criterion in eigensolver
   std::vector<double> evalstop(m, 0.0); 
   std::vector<std::vector<double>> evecstop(m);
   for (auto &v : evecstop)
@@ -719,7 +718,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
    for (int i = 0; i < m; ++i)
      maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
 
-  // printer
+  // Printer
   std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER" 
                                            << " " << "STOPCRITERION"
                                            << " " << " ANALYTICAL" 
@@ -754,20 +753,51 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
                                                              // algorithms are the same, just the tolerance
                                                              // value is reduced.
                << std::endl;
+
+  std::cout << "Relative residual of the stopping criterion with the arpack small tolerance\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_arpack);
+
+  std::cout << "Relative residual of the stopping criterion with the arpack\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_arpack2);
+
+  std::cout << "Relative residual of the stopping criterion with the analytical solution\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_analytical);
+
+  std::cout << "Relative residual of the arpack solutions with the analytical solution\n";
+  std::cout << "Arpack small tol" << std::setw(16) << "Arpack";
+  RelativeResidual(eigenvalues_arpack, eigenvalues_arpack2, eigenvalues_analytical);
+
+
   std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
-  double maxerror = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[m-i-1])); // @NOTE Same comment
-                                                                               // as above.
-  std::cout << "N_M_TOL_ESARERROR_ARPERROR_ESANERROR_ESSTANERROR_TIMERATIO_ARPACKITER " << std::endl;
-  std::cout << n << " & "
-            << m << " & "
-            << tol << " & "
-            << maxerror << " & "
-            << maxerror2 << " & "
-            << maxerror3 << " & "
-            << maxerror4 << " & "
-            << time_eigensolver_new_stopper / time_arpack << " & "
+  std::cout << ": eigensolver with stopping criterion elapsed time " << time_eigensolver_new_stopper << std::endl;
+
+  std::cout << "N" << "     " << "M"
+                   << "     " << "TOL"
+                   << "        " << "ESARERROR"
+                   << "     " << "ESSTARERROR"
+                   << "     " << "ARPERROR"
+                   << "     " << "ESANERROR"
+                   << "     " << "ESSTANERROR"
+                   << "     " << "TIMERATIO"
+                   << "     " << "TIMEWSTOPRATIO"
+                   << "     " << "ARPACKITER"
+                   << std::endl;
+  std::cout << n << "   "
+            << m << "   "
+            << tol << "    "
+            << std::scientific
+            << std::showpoint
+            << std::setprecision(6)
+            << maxerror << "      "
+            << maxerror5 << "     "
+            << maxerror2 << "      "
+            << maxerror3 << "      "
+            << maxerror4 << "      "
+            << time_eigensolver / time_arpack << "      "
+            << time_eigensolver_new_stopper / time_arpack << "     "
             << arpackIterations << " \\\\"
             << std::endl;
 
@@ -820,7 +850,7 @@ int main(int argc, char **argv)
    smallest_eigenvalues_convergence_test(ptree);
 
    largest_eigenvalues_convergence_test(ptree);
-   
+
    // print test for analytical solution
    // int m = ptree.get<int>("evl.m");
    // std::vector<double> eig_test(m, 0.0);
