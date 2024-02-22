@@ -27,7 +27,7 @@
 #include <dune/istl/preconditioners.hh>
 #include <dune/istl/paamg/amg.hh>
 #include <dune/istl/paamg/pinfo.hh>
-#include <dune/istl/umfpack.hh>
+//#include <dune/istl/umfpack.hh>
 #include <dune/istl/cholmod.hh>
 #include <dune/istl/test/laplacian.hh>
 #include <dune/istl/io.hh>
@@ -445,6 +445,18 @@ std::vector<double> eigenvalues_laplace_dirichlet_2d(std::size_t N)
   for (std::size_t i = 0; i < N; ++i)
     for (std::size_t j = 0; j < N; ++j)
       ev[j * N + i] = 4.0 * (std::sin(0.5 * h * (i + 1) * M_PI) * std::sin(0.5 * h * (i + 1) * M_PI) + std::sin(0.5 * h * (j + 1) * M_PI) * std::sin(0.5 * h * (j + 1) * M_PI));
+  std::sort(ev.begin(), ev.end());
+  return ev;
+}
+
+std::vector<double> eigenvalues_laplace_neumann_2d(int N)
+{
+  std::vector<double> ev(N * N);
+  double h = 1 / (N + 1.0);
+  for (std::size_t i = 0; i < N; ++i)
+    for (std::size_t j = 0; j < N; ++j)
+      ev[j * N + i] = 4.0 * (std::cosh(h * (i + 1) * M_PI) * std::cosh(h * (i + 1) * M_PI) + std::cosh(h * (j + 1) * M_PI) * std::cosh(h * (j + 1) * M_PI));
+
   std::sort(ev.begin(), ev.end());
   return ev;
 }
