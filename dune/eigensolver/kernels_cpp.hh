@@ -660,6 +660,11 @@ void matmul_sparse_tallskinny_blocked(MV &Qout, const ISTLM &A, const MV &Qin)
  *
 */
 template <typename MV>
+
+/** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+template <typename MV>
 double stopping_criterion(std::vector<double> &dp,const MV &Q1, const MV &Q2) {
   std::size_t b = MV::blocksize;
 
