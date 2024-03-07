@@ -26,7 +26,10 @@
 // @NOTE use power iteration for the largest eigval and orthogonal iteration for the n-largest eigenvalues
 // @NEXTSTEPS This is the generalization of the power method, called Orthogonal Iteration 
 template <typename ISTLM, typename VEC>
-void StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxiter,
+                                 int nev, std::vector<double> &eval,
+                                 std::vector<VEC> &evec, int verbose = 0,
+                                 unsigned int seed = 123, int iter=0)
  {
     // types
     using block_type = typename ISTLM::block_type;
@@ -72,7 +75,7 @@ void StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxit
    orthonormalize_blocked(Q1);
 
    // storage for Rayleigh quotients
-   std::vector<double> s1(m, 0.0), s2(m, 0.0);
+   std::vector<double> s1(m, 0.0);
 
     double initial_norm = 0.0;
    // do iterations
@@ -85,42 +88,41 @@ void StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxit
      // diag(D) = Q1T * Q2 
      dot_products_diagonal_blocked(s1, Q2, Q1);
 
-     for (auto &x : s1)
-       x -= shift;
-
      // || Q1 * diag(D) - Q2 ||; 
-     if (k == 1)
-       initial_norm = stopping_criterion(s1, Q1, Q2);
-
      double frobenieus_norm = 0.0;
      frobenieus_norm = stopping_criterion(s1, Q1, Q2);
-     std::cout << k << ": "<< frobenieus_norm << std::endl;
+     if (k == 1)
+       initial_norm = frobenieus_norm;
+
+     if (verbose > 0)
+       std::cout << k << ": "<< frobenieus_norm << std::endl;
 
      // orthonormalize again for the next iteration
      orthonormalize_blocked(Q2);
 
-     double distance = 0.0;
-     distance = std::max(distance, std::abs(frobenieus_norm - (tol * initial_norm)));
-     if (verbose > 0 && k > 1)
-       std::cout << "Iter=" << k << " " << distance << std::endl;
-     std::swap(s1, s2);
-
      // exchange Q1 and Q2 for the next iteration
      std::swap(Q1, Q2);
 
-     if (k > 1 && distance < tol)
+     iter = k;
+
+     if (k > 1 && frobenieus_norm < tol*initial_norm)
        break;
    }
 
-   std::cout << "Norm of the initial matmultivec: " << initial_norm << std::endl;
-
+   for (auto &x : s1)
+  {
+     std::cout << "old: " << x << std::endl;
+     x -= shift*2;
+     std::cout << "new: " << x << std::endl;
+ }
    // store output
    // assumes that output is allocated to the correct size
    for (int j = 0; j < nev; ++j)
-     eval[j] = s2[j];
+     eval[j] = s1[j];
    for (int j = 0; j < nev; ++j)
      for (int i = 0; i < n; ++i)
-       evec[j][i] = Q1(i, j); // Q1(i, j); //@NOTE Why are we assigning Q1?
+       evec[j][i] = Q1(i, j);
+    return iter;
 }
 
 /** \brief solve starndard eigenvalue problem to obtain largest eigenvalues
@@ -128,7 +130,7 @@ void StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxit
 // @NOTE use power iteration for the largest eigval and orthogonal iteration for the n-largest eigenvalues
 // @NEXTSTEPS This is the generalization of the power method, called Orthogonal Iteration 
 template <typename ISTLM, typename VEC>
-void StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iter=0)
  {
     // types
     using block_type = typename ISTLM::block_type;
@@ -201,6 +203,7 @@ void StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, s
      // exchange Q1 and Q2 for the next iteration
      std::swap(Q1, Q2);
 
+    iter = k;
      // @NOTE Stopping criterion can be improved
      // We should think of a way to include the
      // check for convergence to the true solution.
@@ -214,13 +217,225 @@ void StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, s
      eval[j] = s2[j];
    for (int j = 0; j < nev; ++j)
      for (int i = 0; i < n; ++i)
-       evec[j][i] = Q1(i, j); // Q1(i, j); //@NOTE Why are we assigning Q1?
+       evec[j][i] = Q1(i, j); 
+  return iter;
+}
+
+
+/** \brief solve standard eigenvalue problem with shift invert to obtain
+     smallest eigenvalues. Use the norm of the offdiagonal elements to stop.*/
+template <typename ISTLM, typename VEC>
+int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
+                                int nev, std::vector<double> &eval, 
+                                std::vector<VEC> &evec, int verbose = 0,
+                                unsigned int seed = 123, int iter = 0)
+{
+  using block_type = typename ISTLM::block_type;
+
+  const int b = 8;
+  const int br = block_type::rows;
+  const int bc = block_type::cols;
+  if (br!=bc)
+    throw std::invalid_argument("StandardInverseOffDiagonal: blocks of input matrix must be square");
+
+  // set the other sizes
+  const std::size_t n = A.N() * br;
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // make m the smallest possible  multiple of the blocksize
+
+  // allocate the two sets of vectors to iterate upon
+  MultiVector<double, b> Q1{n, m};
+  MultiVector<double, b> Q2{n, m};
+
+  // initialize with random numbers
+  std::mt19937 urbg{seed};
+  std::normal_distribution<double> generator{0.0, 1.0};
+  for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
+    for (std::size_t i = 0; i < Q1.rows(); ++i)
+      for (std::size_t j = 0; j < b; ++j)
+        Q1(i, bj + j) = generator(urbg);
+
+  // apply shift; overwrites input matrix A
+  if (shift != 0.0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < br; i++)
+            (*col_iter)[i][i] += shift;
+  }
+
+  // compute factorization of matrix
+  UMFPackFactorizedMatrix<ISTLM> F(A,1);
+
+  // orthonormalize the columns before starting iterations
+  orthonormalize_blocked(Q1);
+
+  // storage for Raleigh quotients
+  std::vector<double> s1(m, 0.0);
+
+  double initial_norm = 0.0;
+  // do iterations
+  for (std::size_t k = 1; k < maxiter; ++k)
+  {
+    // Q2 = A^{-1}*Q1
+    matmul_inverse_tallskinny_blocked(Q2, F, Q1); // apply inverse to all columns
+
+    // orthonormalize again
+    orthonormalize_blocked(Q2);
+
+    // compute raleigh quotients
+    // Q1 = A*Q2
+    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
+    // diag(D) = Q1T*Q2
+    dot_products_diagonal_blocked(s1, Q2, Q1);
+
+     // || Q1 * diag(D) - Q2 ||; 
+     if (k == 1)
+       initial_norm = stopping_criterion_offdiagonal(s1, Q2, Q1);
+
+     double frobenieus_norm = 0.0;
+     frobenieus_norm = stopping_criterion_offdiagonal(s1, Q2, Q1);
+     if (verbose > 0 && k > 1)
+       std::cout << k << ": "<< frobenieus_norm << std::endl;
+
+    double distance = 0.0;
+    distance = std::max(distance, std::abs(frobenieus_norm - (tol * initial_norm)));
+    if (verbose > 0 && k > 1)
+      std::cout << "iter=" << k << " " << distance << std::endl;
+
+    // exchange Q1 and Q2 for next iteration
+    std::swap(Q1, Q2);
+
+    // @LASTHERE Thursday, 15. February 2024 at 16:12:44
+   for (auto &x : s1)
+     x-=shift;
+
+   iter = k;
+
+    if (k > 1 && distance < tol)
+      break;
+  }
+
+   std::cout << "Norm of the initial matmultivec: " << initial_norm << std::endl;
+  // store output need to think about case when it did not converge
+  // assumes that output is allocated to the correct size
+  for (int j = 0; j < nev; ++j)
+    std::cout << j << " " << s1[j] << " " << s1[j]+shift << " " << s1[j] - shift << std::endl;
+  for (int j = 0; j < nev; ++j)
+    eval[j] = s1[j];
+  for (int j = 0; j < nev; ++j)
+    for (int i = 0; i < n; ++i)
+      evec[j][i] = Q1(i, j);
+  return iter;
+}
+
+
+/**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
+ */
+template <typename ISTLM, typename VEC>
+int StandardInverseWithNewStopper(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iter = 0)
+{
+  // types
+  using block_type = typename ISTLM::block_type;
+
+  // set the compile-time known block sizes for convenience
+  const int b = 8;
+  const int br = block_type::rows; // = 1
+  const int bc = block_type::cols; // = 1
+  if (br != bc)
+    throw std::invalid_argument("StandardInverseWithNewStopper: blocks of input matrix must be square");
+
+  // set the other sizes
+  const std::size_t n = A.N() * br;
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible  multiple of the blocksize
+
+  // allocate the two sets of vectors to iterate upon
+  MultiVector<double, b> Q1{n, m};
+  MultiVector<double, b> Q2{n, m};
+
+  // initialize with random numbers
+  std::mt19937 urbg{seed};
+  std::normal_distribution<double> generator{0.0, 1.0};
+  for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
+    for (std::size_t i = 0; i < Q1.rows(); ++i)
+      for (std::size_t j = 0; j < b; ++j)
+        Q1(i, bj + j) = generator(urbg);
+
+  // apply shift; overwrites input matrix A
+  if (shift != 0.0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < br; i++)
+            (*col_iter)[i][i] += shift;
+  }
+
+  // compute factorization of matrix
+  UMFPackFactorizedMatrix<ISTLM> F(A,1);
+
+  // orthonormalize the columns before starting iterations
+  orthonormalize_blocked(Q1);
+
+  // storage for Raleigh quotients
+  std::vector<double> s1(m, 0.0);
+
+  double initial_norm = 0.0;
+  // do iterations
+  for (std::size_t k = 1; k < maxiter; ++k)
+  {
+    // Q2 = A^{-1}*Q1
+    matmul_inverse_tallskinny_blocked(Q2, F, Q1); // apply inverse to all columns
+
+    // orthonormalize again
+    orthonormalize_blocked(Q2);
+
+    // compute raleigh quotients
+    // Q1 = A * Q2
+    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
+    // diag(D) = Q1^T * Q2
+    dot_products_diagonal_blocked(s1, Q2, Q1);
+
+     // || Q1 * diag(D) - Q2 ||;
+     double frobenius_norm = 0.0;
+     frobenius_norm = stopping_criterion(s1, Q2, Q1);
+     if (k == 1)
+       initial_norm = frobenius_norm;
+
+     if (verbose > 0)
+       std::cout << k << ": "<< frobenius_norm << std::endl;
+
+    // exchange Q1 and Q2 for next iteration
+    std::swap(Q1, Q2);
+
+   iter = k;
+
+    if (k > 1 && frobenius_norm < tol*initial_norm)
+      break;
+  }
+
+  for (auto &x : s1)
+  {
+    std::cout << "old: " << x << std::endl;
+    x -= shift*2;
+    std::cout << "new:" << x << std::endl;
+  }
+
+  // assumes that output is allocated to the correct size
+  for (int j = 0; j < nev; ++j)
+    std::cout << j << " " << s1[j] << " " << s1[j]+shift << " " << s1[j] - shift << std::endl;
+  for (int j = 0; j < nev; ++j)
+    eval[j] = s1[j];
+  for (int j = 0; j < nev; ++j)
+    for (int i = 0; i < n; ++i)
+      evec[j][i] = Q1(i, j);
+  return iter;
 }
 
 /**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
  */
 template <typename ISTLM, typename VEC>
-void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iter = 0)
 {
   // types
   using block_type = typename ISTLM::block_type;
@@ -281,6 +496,7 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
     dot_products_diagonal_blocked(s1, Q2, Q1);
     for (auto &x : s1)
       x -= shift;
+
     double distance = 0.0;
     for (int i = 0; i < s1.size(); i++)
       distance = std::max(distance, std::abs(s1[i] - s2[i]));
@@ -290,6 +506,8 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
 
     // exchange Q1 and Q2 for next iteration
     std::swap(Q1, Q2);
+
+    iter = k;
 
     if (k > 1 && distance < tol)
       break;
@@ -301,6 +519,8 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
       evec[j][i] = Q1(i, j);
+
+  return iter;
 }
 
 /**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
@@ -308,7 +528,7 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
  * Implementation assumes that A and B have the same sparsity pattern
  */
 template <typename ISTLM, typename VEC>
-void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double reg, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double reg, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iterCount = 0)
 {
   // copy matrix since we need to shift it
   ISTLM A(inA);
@@ -426,6 +646,7 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
     if (verbose > 2)
       std::cout << "iter=" << iter << " relerror=" << relerror << std::endl;
     std::swap(ra1, ra2);
+  iterCount = iter;
     if (iter>10 & relerror < tol)
       break;
   }
@@ -454,6 +675,7 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
               << " iterations=" << iter
               << " relerror=" << relerror
               << std::endl;
+  return iterCount;
 }
 
 #endif // Udune_eigensolver_HH
