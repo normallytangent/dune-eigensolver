@@ -314,7 +314,7 @@ void mgs_performance_test(const Dune::ParameterTree &ptree, int rank, Barrier *p
   return;
 }
 
-// @NOTE Implement this without islands matrix. Would be nice to see what 
+// @NOTE Implement this without islands matrix. Would be nice to see what
 // percentage of the performance or time is spent in matrix vector multiplications
 //int matvec_performance_test(const Dune::ParameterTree &ptree)
 //{
@@ -455,7 +455,7 @@ std::vector<double> eigenvalues_laplace_neumann_2d(int N)
   double h = 1 / (N + 1.0);
   for (std::size_t i = 0; i < N; ++i)
     for (std::size_t j = 0; j < N; ++j)
-      ev[j * N + i] = 4.0 * (std::cosh(h * (i + 1) * M_PI) * std::cosh(h * (i + 1) * M_PI) + std::cosh(h * (j + 1) * M_PI) * std::cosh(h * (j + 1) * M_PI));
+      ev[j * N + i] = 8.0 * (std::cosh(h * (i + 1) * M_PI) * std::cosh(h * (i + 1) * M_PI) + std::cosh(h * (j + 1) * M_PI) * std::cosh(h * (j + 1) * M_PI));
 
   std::sort(ev.begin(), ev.end());
   return ev;
@@ -486,6 +486,7 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
   double regularization = ptree.get<double>("ev.regularization");
   double tol = ptree.get<double>("ev.tol");
   int verbose = ptree.get<int>("ev.verbose");
+  int seed = ptree.get<int>("ev.seed");
   std::string method = ptree.get<std::string>("ev.method");
 
   if (method == "raes")
@@ -497,7 +498,9 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     Dune::Timer timer;
     pbarrier->wait(rank);
     timer.reset();
-    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose);
+    // GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose);
+    int iter;
+    StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, iter);
     // StandardInverse(A,shift,tol,maxiter,m,eval,evec,verbose);
     pbarrier->wait(rank);
     auto time = timer.elapsed();
@@ -540,23 +543,42 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
   return 0;
 }
 
+/** \brief
+*/
+void RelativeResidual(std::vector<double> &eval,std::vector<double> &evalstop , std::vector<double> &true_eval)
+{
+  std::cout << std::endl;
+  double reltolev = 0;
+  double reltolevs = 0;
+  for (int i = 0; i < eval.size(); i++){
+
+    reltolev = ( eval[i] - true_eval[true_eval.size()-i-1] ) / true_eval[true_eval.size()-i-1];
+    reltolevs = ( evalstop[i] - true_eval[true_eval.size()-i-1] ) / true_eval[true_eval.size()-i-1];
+
+    if(i%10==0){
+      std::cout << std::setw(16)
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(1)
+                << abs(reltolev) << "   " << abs(reltolevs) << std::endl;
+    }
+  }
+}
+
 // this must be called sequentially
 int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
 {
-  std::cout << "Smallest eigenvalues\n";
+  std::cout << "\nSmallest eigenvalues\n";
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  // auto A = get_islands_matrix(ptree);
-  // auto A = get_laplacian_dirichlet(N);
-  auto A = get_laplacian_neumann(N);
-  auto B = get_laplacian_B(N, overlap);
-  // auto B = get_identity(N);
+  auto A = get_laplacian_dirichlet(N);
+  // auto A = get_laplacian_neumann(N);
+  // auto B = get_laplacian_B(N, overlap);
+  auto B = get_identity(N);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
-  // Dune::printmatrix(std::cout, A, "A", "");
-  // @NOTE WHY IS B MATRIX ZERO?
   // Dune::printmatrix(std::cout, B, "B", "");
 
   // obtain more parameters
@@ -575,7 +597,214 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // first compute eigenvalues with arpack to great accuracy
   std::vector<double> eigenvalues_arpack(m, 0.0);
   using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
-  ISTLV vec(A.N());
+  ISTLV vec(n); // vec(A.N());
+  vec = 0.0;
+  std::vector<ISTLV> eigenvectors(m, vec);
+  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
+  arpack.computeStdNonSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
+
+  // now compute eigenvalues with given tolerance in arpack
+  std::vector<double> eigenvalues_arpack2(m, 0.0);
+  Dune::Timer timer_arpack;
+  timer_arpack.reset();
+  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack_tol(A);
+  arpack_tol.computeStdNonSymMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
+  auto time_arpack = timer_arpack.elapsed();
+  auto arpackIterations = arpack_tol.getIterationCount();
+  std::cout << ": arpack elapsed time " << time_arpack << std::endl;
+  double maxerror2 = 0.0;
+  for (int i = 0; i < m; i++)
+    maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
+
+  // Then compute the smallest eigenvalue with ISTL's arpack wrapper
+  Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(A);
+  double w = 0.0;
+  arp.computeSymMinMagnitude(tol,vec,w);
+  std::cout << " " << std::scientific << w << std::endl;
+
+  // next compute eigenvalues with given tolerance in eigensolver
+  std::vector<double> eval(m);
+  std::vector<std::vector<double>> evec(m);
+  for (auto &v : evec)
+    v.resize(n);
+  Dune::Timer timer_eigensolver;
+  timer_eigensolver.reset();
+  int iter = 0;
+  //int esIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, iter);
+  int esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, 0, seed, iter);
+  auto time_eigensolver = timer_eigensolver.elapsed();
+
+  double maxerror = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
+
+  // Add computation of the smallest eigenvalues with the new stopping criterion here
+  std::vector<double> evalstop(m, 0.0);
+  std::vector<std::vector<double>> evecstop(m);
+  for (auto &v : evecstop)
+    v.resize(n);
+  Dune::Timer timer_eigensolver_new_stopper;
+  timer_eigensolver_new_stopper.reset();
+  int essIterations = StandardInverseWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, iter);
+  auto time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
+
+   // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
+   std::vector<double> eigenvalues_analytical(N, 0.0);
+   eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
+   // eigenvalues_analytical = eigenvalues_laplace_neumann_2d(N);
+
+  double maxerror3 = 0.0;
+  for (int i = 0; i < m; ++i)
+    maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
+
+  double maxerror4 = 0.0;
+  for (int i = 0; i < m; ++i)
+    maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[i]));
+
+  double maxerror5 = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[i]));
+
+
+  // printer
+  std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER"
+                                           << " " << "STOPCRITERION"
+                                           << " " << " ANALYTICAL"
+                                           << " " << " ARPACK-SMALL-TOL"
+                                           << " " << " ARPACK-TOL"
+                                           << " " << " ES-AN ERROR"
+                                           << " " << " ES-AR ERROR"
+                                           << " " << " ESS-AN ERROR"
+                                           << " " << " ESS-AR ERROR"
+                                           << std::endl;
+   for (int i = 0; i < eval.size(); i++)
+     std::cout << "eval[" << std::setw(3) << i << "]="
+               << std::setw(16)
+               << std::scientific
+               << std::showpoint
+               << std::setprecision(6)
+               << eval[i]
+               << "  "
+               << evalstop[i]
+               << "  "
+               << eigenvalues_analytical[i]
+               << "  "
+               << eigenvalues_arpack[i]
+               << "  "
+               << eigenvalues_arpack2[i]
+               << "  "
+               << std::abs(eval[i] - eigenvalues_analytical[i])
+               << "  "
+               << std::abs(eval[i] - eigenvalues_arpack[i]) // @NOTE Shouldn't eval be compared
+                                                             // to eigenvalues_arpack2 instead?
+                                                             // They are both calculated for a given
+                                                             // tolerance. -> No, notice that both arpack
+                                                             // algorithms are the same, just the tolerance
+                                                             // value is reduced.
+               << "  "
+               << std::abs(evalstop[i] - eigenvalues_analytical[i])
+               << "  "
+               << std::abs(evalstop[i] - eigenvalues_arpack[i])
+               << std::endl;
+
+  std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a > b;
+                                                                 });
+  std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
+                                                                   {
+                                                                     return a > b;
+                                                                   });
+  std::sort(eigenvalues_analytical.begin(),eigenvalues_analytical.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a > b;
+                                                                 });
+  std::cout << "Relative residual of the stopping criterion with the arpack small tolerance\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_arpack);
+
+  std::cout << "Relative residual of the stopping criterion with the arpack\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_arpack2);
+
+  std::cout << "Relative residual of the stopping criterion with the analytical solution\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_analytical);
+
+  std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a < b;
+                                                                 });
+  std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
+                                                                   {
+                                                                     return a < b;
+                                                                   });
+  std::cout << "Relative residual of the arpack solutions with the analytical solution\n";
+  std::cout << "Arpack small tol" << std::setw(16) << "Arpack";
+  RelativeResidual(eigenvalues_arpack, eigenvalues_arpack2, eigenvalues_analytical);
+
+
+  std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
+  std::cout << "N" << "     " << "M"
+                   << "     " << "TOL"
+                   << "           " << "ESARERROR"
+                   << "         " << "ARPERROR"
+                   << "          " << "ESANERROR"
+                   << "     " << "TIMERATIO"
+                   << "     " << "ARPACKITER"
+                   << "     " << "ES_ITER"
+                   << "     " << "ESS_ITER"
+                   << std::endl;
+
+  std::cout << n << "   "
+            << m << "   "
+            << tol << "    "
+            << std::scientific
+            << std::showpoint
+            << std::setprecision(6)
+            << maxerror << "      "
+            << maxerror2 << "      "
+            << maxerror3 << "      "
+            << time_eigensolver / time_arpack << "      "
+            << arpackIterations << "      "
+            << esIterations << "      "
+            << essIterations << " \\\\"
+            << std::endl;
+  return 0;
+}
+
+// this must be called sequentially
+int smallest_gen_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
+{
+  std::cout << "\nSmallest eigenvalues\n";
+  // set up matrix
+  int N = ptree.get<int>("ev.N");
+  int overlap = ptree.get<int>("ev.overlap");
+  auto A = get_laplacian_neumann(N);
+  auto B = get_laplacian_B(N, overlap);
+  // auto B = get_identity(N);
+  using ISTLM = decltype(A);
+  using block_type = typename ISTLM::block_type;
+  // Dune::printmatrix(std::cout, A, "A", "");
+  // Dune::printmatrix(std::cout, B, "B", "");
+
+  // obtain more parameters
+  std::size_t br = block_type::rows;
+  std::size_t bc = block_type::cols;
+  std::size_t n = A.N() * br;
+  int m = ptree.get<int>("ev.m");
+  int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
+  double shift = ptree.get<double>("ev.shift");
+  double regularization = ptree.get<double>("ev.regularization");
+  double tol = ptree.get<double>("ev.tol");
+  int verbose = ptree.get<int>("ev.verbose");
+  unsigned int seed = ptree.get<unsigned int>("ev.seed");
+  std::string method = ptree.get<std::string>("ev.method");
+
+  // first compute eigenvalues with arpack to great accuracy
+  std::vector<double> eigenvalues_arpack(m, 0.0);
+  using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
+  ISTLV vec(n); // vec(A.N());
   vec = 0.0;
   std::vector<ISTLV> eigenvectors(m, vec);
   ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
@@ -585,13 +814,21 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::vector<double> eigenvalues_arpack2(m, 0.0);
   Dune::Timer timer_arpack;
   timer_arpack.reset();
-  arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
+  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack_tol(A);
+  arpack_tol.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
   auto time_arpack = timer_arpack.elapsed();
-  auto arpackIterations = arpack.getIterationCount();
+  auto arpackIterations = arpack_tol.getIterationCount();
   std::cout << ": arpack elapsed time " << time_arpack << std::endl;
   double maxerror2 = 0.0;
   for (int i = 0; i < m; i++)
     maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
+
+  // Then compute the smallest eigenvalue with ISTL's arpack wrapper
+  // TODO: Change this: No impl for generalized?
+  Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(A);
+  double w = 0.0;
+  arp.computeSymMinMagnitude(tol,vec,w);
+  std::cout << " " << std::scientific << w << std::endl;
 
   // next compute eigenvalues with given tolerance in eigensolver
   std::vector<double> eval(m);
@@ -602,61 +839,135 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   timer_eigensolver.reset();
   GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed);
   auto time_eigensolver = timer_eigensolver.elapsed();
-  // printer
-  std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER" 
-                                           << " " << " ES-AR ERROR" 
-                                           << std::endl;
-  for (int i = 0; i < eval.size(); i++)
-    std::cout << "eval[" << std::setw(3) << i << "]="
-              << std::setw(16)
-              << std::scientific
-              << std::showpoint
-              << std::setprecision(6)
-              << eval[i]
-              << " "
-              << std::abs(eval[i] - eigenvalues_arpack2[i]) // @NOTE Shouldn't eval be compared
-                                                            // to eigenvalues_arpack2 instead?
-                                                            // They are both calculated for a given
-                                                            // tolerance.
-              << std::endl;
-  std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
+
   double maxerror = 0.0;
   for (int i = 0; i < eval.size(); i++)
-    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack2[i])); // @NOTE Same comment
-                                                                               // as above.
-  std::cout << "N_M_TOL_RASERROR_ARPERROR_TIMERATIO_ARPACKITER " << std::endl;
+    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
 
-  std::cout  << n << " & "
-            << m << " & "
-            << tol << " & "
-            << maxerror << " & "
-            << maxerror2 << " & "
-            << time_eigensolver / time_arpack << " & "
+  // Add computation of the smallest eigenvalues with the new stopping criterion here
+  std::vector<double> evalstop(m, 0.0);
+  std::vector<std::vector<double>> evecstop(m);
+  for (auto &v : evecstop)
+    v.resize(n);
+  Dune::Timer timer_eigensolver_new_stopper;
+  timer_eigensolver_new_stopper.reset();
+  GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed);
+  auto time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
+
+   // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
+   std::vector<double> eigenvalues_analytical(N, 0.0);
+   eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
+
+  double maxerror3 = 0.0;
+  for (int i = 0; i < m; ++i)
+    maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
+
+  double maxerror4 = 0.0;
+  for (int i = 0; i < m; ++i)
+    maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[i]));
+
+  double maxerror5 = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[i]));
+
+
+  // printer
+  std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER"
+                                           << " " << "STOPCRITERION"
+                                           << " " << " ANALYTICAL"
+                                           << " " << " ARPACK-SMALL-TOL"
+                                           << " " << " ARPACK-TOL"
+                                           << " " << " ES-AN ERROR"
+                                           << " " << " ES-AR ERROR"
+                                           << std::endl;
+   for (int i = 0; i < eval.size(); i++)
+     std::cout << "eval[" << std::setw(3) << i << "]="
+               << std::setw(16)
+               << std::scientific
+               << std::showpoint
+               << std::setprecision(6)
+               << eval[i]
+               << "  "
+               << evalstop[i]
+               << "  "
+               << eigenvalues_analytical[i]
+               << "  "
+               << eigenvalues_arpack[i]
+               << "  "
+               << eigenvalues_arpack2[i]
+               << "  "
+               << std::abs(eval[i] - eigenvalues_analytical[i])
+               << "  "
+               << std::abs(eval[i] - eigenvalues_arpack[i]) // @NOTE Shouldn't eval be compared
+                                                             // to eigenvalues_arpack2 instead?
+                                                             // They are both calculated for a given
+                                                             // tolerance. -> No, notice that both arpack
+                                                             // algorithms are the same, just the tolerance
+                                                             // value is reduced.
+               << std::endl;
+
+  std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a > b;
+                                                                 });
+  std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
+                                                                   {
+                                                                     return a > b;
+                                                                   });
+  std::sort(eigenvalues_analytical.begin(),eigenvalues_analytical.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a > b;
+                                                                 });
+  std::cout << "Relative residual of the stopping criterion with the arpack small tolerance\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_arpack);
+
+  std::cout << "Relative residual of the stopping criterion with the arpack\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_arpack2);
+
+  std::cout << "Relative residual of the stopping criterion with the analytical solution\n";
+  std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
+  RelativeResidual(eval, evalstop, eigenvalues_analytical);
+
+  std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a < b;
+                                                                 });
+  std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
+                                                                   {
+                                                                     return a < b;
+                                                                   });
+  std::cout << "Relative residual of the arpack solutions with the analytical solution\n";
+  std::cout << "Arpack small tol" << std::setw(16) << "Arpack";
+  RelativeResidual(eigenvalues_arpack, eigenvalues_arpack2, eigenvalues_analytical);
+
+
+  std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
+  std::cout << "N" << "     " << "M"
+                   << "     " << "TOL"
+                   << "           " << "ESARERROR"
+                   << "         " << "ARPERROR"
+                   << "          " << "ESANERROR"
+                   << "     " << "TIMERATIO"
+                   << "     " << "ARPACKITER"
+                   << std::endl;
+
+  std::cout << n << "   "
+            << m << "   "
+            << tol << "    "
+            << std::scientific
+            << std::showpoint
+            << std::setprecision(6)
+            << maxerror << "      "
+            << maxerror2 << "      "
+            << maxerror3 << "      "
+            << time_eigensolver / time_arpack << "      "
             << arpackIterations << " \\\\"
             << std::endl;
-
   return 0;
 }
 
-void RelativeResidual(std::vector<double> &eval,std::vector<double> &evalstop , std::vector<double> &true_eval)
-{
-  std::cout << std::endl;
-  double reltolev = 0;
-  double reltolevs = 0;
-  for (int i = 0; i < eval.size(); i++){
-
-    reltolev = eval[i] - true_eval[true_eval.size()-i-1];
-    reltolev = reltolev / true_eval[true_eval.size()-i-1];
-    reltolevs = evalstop[i] - true_eval[true_eval.size()-i-1];
-    reltolevs = reltolevs / true_eval[true_eval.size()-i-1];
-
-    std::cout << std::setw(16)
-              << std::scientific
-              << std::showpoint
-              << std::setprecision(1)
-              << abs(reltolev) << "   " << abs(reltolevs) << std::endl;
-  }
-}
 // this must be called sequentially
 int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
@@ -666,15 +977,12 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // set up matrix
   int N = ptree.get<int>("evl.N");
   int overlap = ptree.get<int>("evl.overlap");
-  // auto A = get_islands_matrix(ptree);
   auto A = get_laplacian_dirichlet(N);
   // auto A = get_laplacian_neumann(N);
   // auto B = get_laplacian_B(N, overlap);
-   auto B = get_identity(N);
+  auto B = get_identity(N);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
-  // Dune::printmatrix(std::cout, A, "A", "");
-  // @NOTE WHY IS B MATRIX ZERO?
   // Dune::printmatrix(std::cout, B, "B", "");
 
   // obtain more parameters
@@ -683,7 +991,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::size_t n = A.N() * br;
   int m = ptree.get<int>("evl.m");
   int maxiter = ptree.get<int>("evl.maxiter"); // number of iterations for test
-  double shift = 0;  // ptree.get<double>("evl.shift");
+  double shift = ptree.get<double>("evl.shift");
   double regularization = ptree.get<double>("evl.regularization");
   double tol = ptree.get<double>("evl.tol");
   int verbose = ptree.get<int>("evl.verbose");
@@ -720,13 +1028,14 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::cout << " " << w << std::endl;
 
   // Next compute eigenvalues with given tolerance in eigensolver
-  std::vector<double> eval(m, 0.0); 
+  std::vector<double> eval(m, 0.0);
   std::vector<std::vector<double>> evec(m);
   for (auto &v : evec)
     v.resize(n);
   Dune::Timer timer_eigensolver;
   timer_eigensolver.reset();
-  StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
+  int iter = 0;
+  int esIterations = StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed, iter);
   auto time_eigensolver = timer_eigensolver.elapsed();
 
   double maxerror = 0.0;
@@ -734,18 +1043,19 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[m-i-1]));
 
   // Also compute eigenvalues with given tolerance and new stopping criterion in eigensolver
-  std::vector<double> evalstop(m, 0.0); 
+  std::vector<double> evalstop(m, 0.0);
   std::vector<std::vector<double>> evecstop(m);
   for (auto &v : evecstop)
     v.resize(n);
   Dune::Timer timer_eigensolver_new_stopper;
   timer_eigensolver_new_stopper.reset();
-  StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed);
+  int essIterations = StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, iter);
   auto time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
 
-   // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically 
+   // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
    std::vector<double> eigenvalues_analytical(N, 0.0);
    eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
+   // eigenvalues_analytical = eigenvalues_laplace_neumann_2d(N);
    double maxerror3 = 0.0;
    for (int i = 0; i < m; ++i)
      maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
@@ -759,13 +1069,15 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[m-i-1]));
 
   // Printer
-  std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER" 
+  std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER"
                                            << " " << "STOPCRITERION"
-                                           << " " << " ANALYTICAL" 
-                                           << " " << " ARPACK-SMALL-TOL" 
-                                           << " " << " ARPACK-TOL" 
-                                           << " " << " ES-AN ERROR" 
-                                           << " " << " ES-AR ERROR" 
+                                           << " " << " ANALYTICAL"
+                                           << " " << " ARPACK-SMALL-TOL"
+                                           << " " << " ARPACK-TOL"
+                                           << " " << " ES-AN ERROR"
+                                           << " " << " ES-AR ERROR"
+                                           << " " << " ESS-AN ERROR"
+                                           << " " << " ESS-AR ERROR"
                                            << std::endl;
 
    for (int i = 0; i < eval.size(); i++)
@@ -792,6 +1104,10 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
                                                              // tolerance. -> No, notice that both arpack
                                                              // algorithms are the same, just the tolerance
                                                              // value is reduced.
+               << "  "
+               << std::abs(evalstop[i] - eigenvalues_analytical[eigenvalues_analytical.size()-i-1])
+               << "  "
+               << std::abs(evalstop[i] - eigenvalues_arpack[eigenvalues_arpack.size()-i-1])
                << std::endl;
 
   std::cout << "Relative residual of the stopping criterion with the arpack small tolerance\n";
@@ -808,6 +1124,14 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
   std::cout << "Relative residual of the arpack solutions with the analytical solution\n";
   std::cout << "Arpack small tol" << std::setw(16) << "Arpack";
+  std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
+                                                                 {
+                                                                   return a > b;
+                                                                 });
+  std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
+                                                                   {
+                                                                     return a > b;
+                                                                   });
   RelativeResidual(eigenvalues_arpack, eigenvalues_arpack2, eigenvalues_analytical);
 
 
@@ -824,6 +1148,8 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
                    << "     " << "TIMERATIO"
                    << "     " << "TIMEWSTOPRATIO"
                    << "     " << "ARPACKITER"
+                   << "     " << "ES_ITER"
+                   << "     " << "ESS_ITER"
                    << std::endl;
   std::cout << n << "   "
             << m << "   "
@@ -838,7 +1164,9 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
             << maxerror4 << "      "
             << time_eigensolver / time_arpack << "      "
             << time_eigensolver_new_stopper / time_arpack << "     "
-            << arpackIterations << " \\\\"
+            << arpackIterations << "     "
+            << esIterations << "      "
+            << essIterations << " \\\\"
             << std::endl;
 
   return 0;
@@ -887,7 +1215,10 @@ int main(int argc, char **argv)
   // for (int rank = 0; rank < numthreads - 1; ++rank)
   //   threads[rank].join();
 
-   smallest_eigenvalues_convergence_test(ptree);
+  std::cout << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
+   // smallest_eigenvalues_convergence_test(ptree);
+
+  // smallest_gen_eigenvalues_convergence_test(ptree);
 
    largest_eigenvalues_convergence_test(ptree);
 
