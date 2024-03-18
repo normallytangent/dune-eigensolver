@@ -228,7 +228,7 @@ template <typename ISTLM, typename VEC>
 int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
                                 int nev, std::vector<double> &eval, 
                                 std::vector<VEC> &evec, int verbose = 0,
-                                unsigned int seed = 123, int iter = 0)
+                                unsigned int seed = 123, int iter = 0, int stopperstwitch=0)
 {
   using block_type = typename ISTLM::block_type;
 
@@ -286,35 +286,33 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
     // compute raleigh quotients
     // Q1 = A*Q2
     matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-    // diag(D) = Q1T*Q2
+    // diag(D) = Q2T*Q1
     dot_products_diagonal_blocked(s1, Q2, Q1);
 
-     // || Q1 * diag(D) - Q2 ||; 
+     // || Q2T * Q1 ||i,j (i!=j)  - tol * ||Q2T * Q1||i,i;
+     double frobenius_norm = 0.0;
+     if (stopperstwitch == 0)
+       frobenius_norm = stopping_criterion_offdiagonal(tol, s1, Q2, Q1);
+     else
+       frobenius_norm = stopping_criterion_test(tol, s1, Q2, Q1);
+
      if (k == 1)
-       initial_norm = stopping_criterion_offdiagonal(s1, Q2, Q1);
+       initial_norm = frobenius_norm;
 
-     double frobenieus_norm = 0.0;
-     frobenieus_norm = stopping_criterion_offdiagonal(s1, Q2, Q1);
-     if (verbose > 0 && k > 1)
-       std::cout << k << ": "<< frobenieus_norm << std::endl;
-
-    double distance = 0.0;
-    distance = std::max(distance, std::abs(frobenieus_norm - (tol * initial_norm)));
-    if (verbose > 0 && k > 1)
-      std::cout << "iter=" << k << " " << distance << std::endl;
+     if (verbose > 0)
+       std::cout << k << ": "<< frobenius_norm << std::endl;
 
     // exchange Q1 and Q2 for next iteration
     std::swap(Q1, Q2);
 
-    // @LASTHERE Thursday, 15. February 2024 at 16:12:44
-   for (auto &x : s1)
-     x-=shift;
+    iter = k;
 
-   iter = k;
-
-    if (k > 1 && distance < tol)
+    if (k > 1 && frobenius_norm < tol * initial_norm)
       break;
   }
+
+  for (auto &x : s1)
+    x-=shift;
 
    std::cout << "Norm of the initial matmultivec: " << initial_norm << std::endl;
   // store output need to think about case when it did not converge
