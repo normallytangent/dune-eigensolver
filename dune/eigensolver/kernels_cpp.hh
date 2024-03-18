@@ -20,6 +20,20 @@ std::vector<std::vector<double>> dot_products_diagonal(const MV &Q)
   return dp;
 }
 
+//! simple dot product evaluation for comparison
+template <typename MV>
+void dot_products_all_naive(std::vector<std::vector<double>> &dp, const MV &Q1, const MV &Q2)
+{
+  for (std::size_t i = 0; i < Q1.cols(); i++)
+    for (std::size_t j = 0; j < Q2.cols(); j++)
+    {
+      double s = 0.0;
+      for (std::size_t k = 0; k < dp.size(); k++)
+        s += Q1(k, i) * Q2(k, j);
+      dp[i][j] = s;
+    }
+}
+
 //! compute dot product of each column in Q1 with same column in Q2
 template <typename MV>
 void dot_products_diagonal_blocked(std::vector<double> &dp, const MV &Q1, const MV &Q2)
@@ -656,11 +670,6 @@ void matmul_sparse_tallskinny_blocked(MV &Qout, const ISTLM &A, const MV &Qin)
   }
 }
 
-/** @brief Calculate the norm of the resulting eigenvectors in order to measure the convergence to solution.
- *
-*/
-template <typename MV>
-
 /** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
  *
 */
@@ -676,6 +685,57 @@ double stopping_criterion(std::vector<double> &dp,const MV &Q1, const MV &Q2) {
         partial += (Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j))*(Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j));
 
   norm = std::sqrt(partial);
+  return norm;
+}
+
+/** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+template <typename MV>
+double stopping_criterion_test(double tol, std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+
+  double partial = 0.0;
+  double partial_off = 0.0;
+  double partial_diag = 0.0;
+  double norm = 0.0;
+  std::cout << Q1.rows() << " " << Q1.cols() <<std::endl;
+  for (std::size_t i = 0; i < Q1.rows(); ++i)
+    for (std::size_t j = 0; j < Q2.cols(); ++j)
+      // partial += (Q1(i,j)*dp[j] - Q2(i,j))*(Q1(i,j)*dp[j] - Q2(i,j));
+     for(std::size_t k = 0; k < dp.size(); ++k)
+    {
+      if (i==j)
+        partial_diag += Q1(i,k)*Q2(k,j);
+      else
+        partial_off += Q1(i,k)*Q2(k,j);
+     }
+  norm = std::sqrt(partial_off) - tol * std::sqrt(partial_diag);
+  // norm = std::sqrt(partial);
+  return norm;
+}
+
+/** @brief Calculate the norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+template <typename MV>
+double stopping_criterion_offdiagonal(double tol, std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+  std::size_t b = MV::blocksize;
+
+  double partial_off = 0.0;
+  double partial_diag = 0.0;
+  double norm = 0.0;
+
+  std::vector<std::vector<double>> Q2T (Q1.cols(), std::vector<double> (Q2.cols(),0.0));
+  dot_products_all_blocked(Q2T,Q1, Q2);
+
+  for (std::size_t i = 0; i < Q1.cols(); ++i)
+    for (std::size_t j = 0; j < Q2.cols(); ++j)
+      if (i == j)
+        partial_diag += dp[i]*dp[i];
+      else
+        partial_off += Q2T[i][j]*Q2T[i][j];
+
+  norm = std::sqrt(partial_off) - tol * std::sqrt(partial_diag);
   return norm;
 }
 
