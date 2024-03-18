@@ -25,7 +25,7 @@
 //#if DUNE_VERSION_GTE(DUNE_ISTL, 2, 8)
 #include <dune/istl/blocklevel.hh>
 //#endif
-#include <dune/istl/eigenvalue/arpackpp.hh>
+//#include <dune/istl/eigenvalue/arpackpp.hh>
 #include <dune/istl/bvector.hh>       // provides Dune::BlockVector
 #include <dune/istl/istlexception.hh> // provides Dune::ISTLError
 #include <dune/istl/io.hh>            // provides Dune::printvector(...)
@@ -577,7 +577,9 @@ namespace ArpackMLGeneo
 
     //! Solve GEVP as standard problem with own shift invert
     inline void computeStdNonSymMinMagnitude(const BCRSMatrix &b_, const Real &epsilon,
-                                             std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
+                                            std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
+    // inline void computeStdNonSymMinMagnitude(const Real &epsilon,
+    //                                          std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
     {
       // print verbosity information
       if (verbosity_level_ > 0)
@@ -601,6 +603,9 @@ namespace ArpackMLGeneo
       // and to perform the product (A-sigma B)^-1 v (LU decomposition is not used)
       typedef APP_BCRSMatMul_OwnShiftMode<BCRSMatrix> WrappedMatrix;
       WrappedMatrix A(ashiftb, b_);
+
+      // typedef Dune::Impl::ArPackPlusPlus_BCRSMatrixWrapper<BCRSMatrix> WrappedMatrix;
+      // WrappedMatrix A(a_);
 
       // get number of rows and columns in A
       const int nrows = A.nrows();
@@ -634,7 +639,7 @@ namespace ArpackMLGeneo
       std::sort(index.begin(), index.end(),
                 [&](const int &a, const int &b)
                 {
-                  return (sigma + 1. / ev[a] < sigma + 1. / ev[b]);
+                  return ( sigma + 1. / ev[a] < sigma + 1. / ev[b]);
                 });
 
       // Unshift eigenpairs
