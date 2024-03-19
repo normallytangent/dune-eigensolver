@@ -230,17 +230,19 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
                                 std::vector<VEC> &evec, int verbose = 0,
                                 unsigned int seed = 123, int iter = 0, int stopperstwitch=0)
 {
+  // types
   using block_type = typename ISTLM::block_type;
 
+  // set the compile-time known block sizes for convenience
   const int b = 8;
-  const int br = block_type::rows;
-  const int bc = block_type::cols;
+  const int br = block_type::rows; // = 1
+  const int bc = block_type::cols; // = 1
   if (br!=bc)
     throw std::invalid_argument("StandardInverseOffDiagonal: blocks of input matrix must be square");
 
   // set the other sizes
   const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // make m the smallest possible  multiple of the blocksize
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; //= 32, make m the smallest possible  multiple of the blocksize
 
   // allocate the two sets of vectors to iterate upon
   MultiVector<double, b> Q1{n, m};
@@ -286,15 +288,16 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
     // compute raleigh quotients
     // Q1 = A*Q2
     matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-    // diag(D) = Q2T*Q1
+    // diag(D) = Q2^T * Q1
     dot_products_diagonal_blocked(s1, Q2, Q1);
 
-     // || Q2T * Q1 ||i,j (i!=j)  - tol * ||Q2T * Q1||i,i;
      double frobenius_norm = 0.0;
      if (stopperstwitch == 0)
+        // || Q2T * Q1 ||i,j (i!=j)  - tol * ||Q2T * Q1||i,i;
        frobenius_norm = stopping_criterion_offdiagonal(tol, s1, Q2, Q1);
-     else
-       frobenius_norm = stopping_criterion_test(tol, s1, Q2, Q1);
+     else if (stopperstwitch == 1)
+        // || Q1 * diag(D) - Q2 ||;
+       frobenius_norm = stopping_criterion(s1, Q2, Q1);
 
      if (k == 1)
        initial_norm = frobenius_norm;
@@ -318,110 +321,7 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
   // store output need to think about case when it did not converge
   // assumes that output is allocated to the correct size
   for (int j = 0; j < nev; ++j)
-    std::cout << j << " " << s1[j] << " " << s1[j]+shift << " " << s1[j] - shift << std::endl;
-  for (int j = 0; j < nev; ++j)
-    eval[j] = s1[j];
-  for (int j = 0; j < nev; ++j)
-    for (int i = 0; i < n; ++i)
-      evec[j][i] = Q1(i, j);
-  return iter;
-}
-
-
-/**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
- */
-template <typename ISTLM, typename VEC>
-int StandardInverseWithNewStopper(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iter = 0)
-{
-  // types
-  using block_type = typename ISTLM::block_type;
-
-  // set the compile-time known block sizes for convenience
-  const int b = 8;
-  const int br = block_type::rows; // = 1
-  const int bc = block_type::cols; // = 1
-  if (br != bc)
-    throw std::invalid_argument("StandardInverseWithNewStopper: blocks of input matrix must be square");
-
-  // set the other sizes
-  const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible  multiple of the blocksize
-
-  // allocate the two sets of vectors to iterate upon
-  MultiVector<double, b> Q1{n, m};
-  MultiVector<double, b> Q2{n, m};
-
-  // initialize with random numbers
-  std::mt19937 urbg{seed};
-  std::normal_distribution<double> generator{0.0, 1.0};
-  for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
-    for (std::size_t i = 0; i < Q1.rows(); ++i)
-      for (std::size_t j = 0; j < b; ++j)
-        Q1(i, bj + j) = generator(urbg);
-
-  // apply shift; overwrites input matrix A
-  if (shift != 0.0)
-  {
-    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-        if (row_iter.index() == col_iter.index())
-          for (int i = 0; i < br; i++)
-            (*col_iter)[i][i] += shift;
-  }
-
-  // compute factorization of matrix
-  UMFPackFactorizedMatrix<ISTLM> F(A,1);
-
-  // orthonormalize the columns before starting iterations
-  orthonormalize_blocked(Q1);
-
-  // storage for Raleigh quotients
-  std::vector<double> s1(m, 0.0);
-
-  double initial_norm = 0.0;
-  // do iterations
-  for (std::size_t k = 1; k < maxiter; ++k)
-  {
-    // Q2 = A^{-1}*Q1
-    matmul_inverse_tallskinny_blocked(Q2, F, Q1); // apply inverse to all columns
-
-    // orthonormalize again
-    orthonormalize_blocked(Q2);
-
-    // compute raleigh quotients
-    // Q1 = A * Q2
-    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-    // diag(D) = Q1^T * Q2
-    dot_products_diagonal_blocked(s1, Q2, Q1);
-
-     // || Q1 * diag(D) - Q2 ||;
-     double frobenius_norm = 0.0;
-     frobenius_norm = stopping_criterion(s1, Q2, Q1);
-     if (k == 1)
-       initial_norm = frobenius_norm;
-
-     if (verbose > 0)
-       std::cout << k << ": "<< frobenius_norm << std::endl;
-
-    // exchange Q1 and Q2 for next iteration
-    std::swap(Q1, Q2);
-
-   iter = k;
-
-    if (k > 1 && frobenius_norm < tol*initial_norm)
-      break;
-  }
-
-  for (auto &x : s1)
-  {
-    std::cout << "old: " << x << std::endl;
-    x -= shift*2;
-    std::cout << "new:" << x << std::endl;
-  }
-
-  // assumes that output is allocated to the correct size
-  for (int j = 0; j < nev; ++j)
-    std::cout << j << " " << s1[j] << " " << s1[j]+shift << " " << s1[j] - shift << std::endl;
+    std::cout << j << " " << s1[j] << std::endl;
   for (int j = 0; j < nev; ++j)
     eval[j] = s1[j];
   for (int j = 0; j < nev; ++j)
