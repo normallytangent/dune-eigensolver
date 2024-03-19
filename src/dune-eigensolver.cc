@@ -574,12 +574,12 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
   auto A = get_laplacian_dirichlet(N);
-  // auto A = get_laplacian_neumann(N);
+  //auto A = get_laplacian_neumann(N);
   // auto B = get_laplacian_B(N, overlap);
   auto B = get_identity(N);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
-  // Dune::printmatrix(std::cout, B, "B", "");
+  //Dune::printmatrix(std::cout, A, "Unchanged", "");
 
   // obtain more parameters
   std::size_t br = block_type::rows;
@@ -623,7 +623,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::cout << " " << std::scientific << w << std::endl;
 
   // next compute eigenvalues with given tolerance in eigensolver
-  std::vector<double> eval(m);
+  std::vector<double> eval(m,0.0);
   std::vector<std::vector<double>> evec(m);
   for (auto &v : evec)
     v.resize(n);
@@ -631,7 +631,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   timer_eigensolver.reset();
   int iter = 0;
   //int esIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, iter);
-  int esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, 0, seed, iter);
+  // int esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, 0, seed, iter);
+  int stopperswitch = 0;
+  int esIterations = StandardInverseOffDiagonal(A, shift, tol, maxiter, m, eval, evec, verbose, seed, iter, stopperswitch);
   auto time_eigensolver = timer_eigensolver.elapsed();
 
   double maxerror = 0.0;
@@ -643,9 +645,20 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::vector<std::vector<double>> evecstop(m);
   for (auto &v : evecstop)
     v.resize(n);
+  if (shift != 0.0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < block_type::rows; i++)
+            (*col_iter)[i][i] -= shift;
+  }
+
   Dune::Timer timer_eigensolver_new_stopper;
   timer_eigensolver_new_stopper.reset();
-  int essIterations = StandardInverseWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, iter);
+  iter = 0;
+  stopperswitch = 1;
+  int essIterations = StandardInverseOffDiagonal(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, iter, stopperswitch);
   auto time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
 
    // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
@@ -1216,11 +1229,11 @@ int main(int argc, char **argv)
   //   threads[rank].join();
 
   std::cout << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
-   // smallest_eigenvalues_convergence_test(ptree);
+    smallest_eigenvalues_convergence_test(ptree);
 
   // smallest_gen_eigenvalues_convergence_test(ptree);
 
-   largest_eigenvalues_convergence_test(ptree);
+   // largest_eigenvalues_convergence_test(ptree);
 
    // print test for analytical solution
    // int m = ptree.get<int>("evl.m");
