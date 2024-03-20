@@ -228,7 +228,7 @@ template <typename ISTLM, typename VEC>
 int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
                                 int nev, std::vector<double> &eval, 
                                 std::vector<VEC> &evec, int verbose = 0,
-                                unsigned int seed = 123, int iter = 0, int stopperstwitch=0)
+                                unsigned int seed = 123, int stopperstwitch=0)
 {
   // types
   using block_type = typename ISTLM::block_type;
@@ -276,6 +276,7 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
   std::vector<double> s1(m, 0.0);
 
   double initial_norm = 0.0;
+  int iter = 0;
   // do iterations
   for (std::size_t k = 1; k < maxiter; ++k)
   {
@@ -333,7 +334,7 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
 /**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
  */
 template <typename ISTLM, typename VEC>
-int StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iter = 0)
+int StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
 {
   // types
   using block_type = typename ISTLM::block_type;
@@ -380,6 +381,7 @@ int StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, st
   // storage for Raleigh quotients
   std::vector<double> s1(m, 0.0), s2(m, 0.0);
 
+  int iter = 0;
   // do iterations
   for (std::size_t k = 1; k < maxiter; ++k)
   {
@@ -426,7 +428,7 @@ int StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, st
  * Implementation assumes that A and B have the same sparsity pattern
  */
 template <typename ISTLM, typename VEC>
-int GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double reg, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iterCount = 0)
+int GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double reg, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
 {
   // copy matrix since we need to shift it
   ISTLM A(inA);
@@ -544,7 +546,6 @@ int GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double re
     if (verbose > 2)
       std::cout << "iter=" << iter << " relerror=" << relerror << std::endl;
     std::swap(ra1, ra2);
-  iterCount = iter;
     if (iter>10 & relerror < tol)
       break;
   }
@@ -573,7 +574,7 @@ int GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double re
               << " iterations=" << iter
               << " relerror=" << relerror
               << std::endl;
-  return iterCount;
+  return iter;
 }
 
 #endif // Udune_eigensolver_HH
