@@ -484,6 +484,27 @@ void RelativeResidual(std::vector<double> &eval,std::vector<double> &evalstop , 
   }
 }
 
+template <typename ISTLM>
+void unshift_matrix(ISTLM &A, double shift)
+{
+  for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+    for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+      if (row_iter.index() == col_iter.index())
+        for (int i = 0; i < ISTLM::block_type::rows; i++)
+          (*col_iter)[i][i] -= shift;
+}
+
+template <typename ISTLM>
+void unshift_matrix(ISTLM &A, ISTLM &B, double shift, double regularization)
+{
+  A.axpy(-shift,B);
+  for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+    for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+      if (row_iter.index() == col_iter.index())
+        for (int i = 0; i < ISTLM::block_type::rows; i++)
+          (*col_iter)[i][i] -= regularization;
+}
+
 // this must be called sequentially
 int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
@@ -553,6 +574,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     timer_eigensolver.reset();
     esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
     time_eigensolver = timer_eigensolver.elapsed();
+    unshift_matrix(A, shift);
   }
   else if (method == "gen")
   {
@@ -560,6 +582,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     timer_eigensolver.reset();
     esIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed);
     time_eigensolver = timer_eigensolver.elapsed();
+    unshift_matrix(A, B, shift, regularization);
   }
 
   // Add computation of the smallest eigenvalues with the new stopping criterion here
@@ -567,14 +590,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::vector<std::vector<double>> evecstop(m);
   for (auto &v : evecstop)
     v.resize(n);
-  if (shift != 0.0)
-  {
-    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-        if (row_iter.index() == col_iter.index())
-          for (int i = 0; i < block_type::rows; i++)
-            (*col_iter)[i][i] -= shift;
-  }
   
   double time_eigensolver_new_stopper;
   int essIterations;
@@ -584,6 +599,13 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     timer_eigensolver_new_stopper.reset();
     essIterations = StandardInverseOffDiagonal(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
+  }
+  else if (method == "gen")
+  {
+    Dune::Timer timer_eigensolver;
+    timer_eigensolver.reset();
+    essIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed);
+    time_eigensolver_new_stopper = timer_eigensolver.elapsed();
   }
 
   // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
@@ -683,6 +705,8 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[i]));
 
   std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
+  std::cout << ": eigensolver with stopping criterion elapsed time " << time_eigensolver_new_stopper << std::endl;
+
   std::cout << "N" << "     " << "M"
                    << "     " << "TOL"
                    << "           " << "ESARERROR"
@@ -764,9 +788,6 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   auto time_arpack = timer_arpack.elapsed();
   auto arpackIterations = arpack_tol.getIterationCount();
   std::cout << ": arpack elapsed time " << time_arpack << std::endl;
-  double maxerror2 = 0.0;
-  for (int i = 0; i < m; i++)
-    maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[m-i-1] - eigenvalues_arpack[m-i-1]));
 
   // Then compute the largest eigenvalue with ISTL's arpack wrapper
   Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(A);
@@ -779,41 +800,36 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::vector<std::vector<double>> evec(m);
   for (auto &v : evec)
     v.resize(n);
-  Dune::Timer timer_eigensolver;
-  timer_eigensolver.reset();
-  int iter = 0;
-  int esIterations = StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed, iter);
-  auto time_eigensolver = timer_eigensolver.elapsed();
-
-  double maxerror = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[m-i-1]));
+  double time_eigensolver;
+  int esIterations;
+  if (method == "std")
+  {
+    Dune::Timer timer_eigensolver;
+    timer_eigensolver.reset();
+    esIterations = StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
+    time_eigensolver = timer_eigensolver.elapsed();
+  }
 
   // Also compute eigenvalues with given tolerance and new stopping criterion in eigensolver
   std::vector<double> evalstop(m, 0.0);
   std::vector<std::vector<double>> evecstop(m);
   for (auto &v : evecstop)
     v.resize(n);
-  Dune::Timer timer_eigensolver_new_stopper;
-  timer_eigensolver_new_stopper.reset();
-  int essIterations = StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, iter);
-  auto time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
+  if (shift != 0.0)
+    unshift_matrix(A, shift);
 
+  double time_eigensolver_new_stopper;
+  int essIterations;
+  if (method == "std")
+  {
+    Dune::Timer timer_eigensolver_new_stopper;
+    timer_eigensolver_new_stopper.reset();
+    essIterations = StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed);
+    time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
+  }
    // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
    std::vector<double> eigenvalues_analytical(N, 0.0);
    eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
-   // eigenvalues_analytical = eigenvalues_laplace_neumann_2d(N);
-   double maxerror3 = 0.0;
-   for (int i = 0; i < m; ++i)
-     maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
-
-   double maxerror4 = 0.0;
-   for (int i = 0; i < m; ++i)
-     maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
-
-  double maxerror5 = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[m-i-1]));
 
   // Printer
   std::cout << "eval_num" << std::setw(7) << " " << "EIGENSOLVER"
@@ -845,12 +861,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
                << "  "
                << std::abs(eval[i] - eigenvalues_analytical[eigenvalues_analytical.size()-i-1])
                << "  "
-               << std::abs(eval[i] - eigenvalues_arpack[eigenvalues_arpack.size()-i-1]) // @NOTE Shouldn't eval be compared
-                                                             // to eigenvalues_arpack2 instead?
-                                                             // They are both calculated for a given
-                                                             // tolerance. -> No, notice that both arpack
-                                                             // algorithms are the same, just the tolerance
-                                                             // value is reduced.
+               << std::abs(eval[i] - eigenvalues_arpack[eigenvalues_arpack.size()-i-1])
                << "  "
                << std::abs(evalstop[i] - eigenvalues_analytical[eigenvalues_analytical.size()-i-1])
                << "  "
@@ -880,6 +891,26 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
                                                                      return a > b;
                                                                    });
   RelativeResidual(eigenvalues_arpack, eigenvalues_arpack2, eigenvalues_analytical);
+
+  double maxerror = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[m-i-1]));
+
+  double maxerror2 = 0.0;
+  for (int i = 0; i < m; i++)
+    maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[m-i-1] - eigenvalues_arpack[m-i-1]));
+
+   double maxerror3 = 0.0;
+   for (int i = 0; i < m; ++i)
+     maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
+
+   double maxerror4 = 0.0;
+   for (int i = 0; i < m; ++i)
+     maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[eigenvalues_analytical.size()-i-1]));
+
+  double maxerror5 = 0.0;
+  for (int i = 0; i < eval.size(); i++)
+    maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[m-i-1]));
 
 
   std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;

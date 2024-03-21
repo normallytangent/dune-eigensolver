@@ -435,27 +435,30 @@ int StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, st
  * Implementation assumes that A and B have the same sparsity pattern
  */
 template <typename ISTLM, typename VEC>
-int GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double reg, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int GeneralizedInverse(ISTLM &A, const ISTLM &B, double shift,
+                        double reg, double tol, int maxiter, int nev,
+                        std::vector<double> &eval, std::vector<VEC> &evec,
+                        int verbose = 0, unsigned int seed = 123, int stopperstwitch=0)
 {
   // copy matrix since we need to shift it
-  ISTLM A(inA);
+  // ISTLM A(inA);
 
   // types
   using block_type = typename ISTLM::block_type;
 
   // set the compile-time known block sizes for convenience
   const int b = 8;
-  const int br = block_type::rows;
-  const int bc = block_type::cols;
+  const int br = block_type::rows; // = 1
+  const int bc = block_type::cols; // = 1
   if (br != bc)
-    throw std::invalid_argument("StandardInverse: blocks of input matrix must be square");
+    throw std::invalid_argument("GeneralizedInverse: blocks of input matrix must be square");
 
   // measure time
   Dune::Timer timer;
 
   // set the other sizes
   const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // make m the smallest possible  multiple of the blocksize
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible  multiple of the blocksize
 
   // allocate the two sets of vectors to iterate upon
   MultiVector<double, b> Q1{n, m};
