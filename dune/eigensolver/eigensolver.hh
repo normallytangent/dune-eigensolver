@@ -29,7 +29,7 @@ template <typename ISTLM, typename VEC>
 int StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxiter,
                                  int nev, std::vector<double> &eval,
                                  std::vector<VEC> &evec, int verbose = 0,
-                                 unsigned int seed = 123, int iter=0)
+                                 unsigned int seed = 123)
  {
     // types
     using block_type = typename ISTLM::block_type;
@@ -78,6 +78,7 @@ int StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxite
    std::vector<double> s1(m, 0.0);
 
     double initial_norm = 0.0;
+    int iter =0;
    // do iterations
    for (std::size_t k = 1; k < maxiter; ++k)
    {
@@ -130,7 +131,7 @@ int StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxite
 // @NOTE use power iteration for the largest eigval and orthogonal iteration for the n-largest eigenvalues
 // @NEXTSTEPS This is the generalization of the power method, called Orthogonal Iteration 
 template <typename ISTLM, typename VEC>
-int StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123, int iter=0)
+int StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
  {
     // types
     using block_type = typename ISTLM::block_type;
@@ -179,6 +180,7 @@ int StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, st
    std::vector<double> s1(m, 0.0), s2(m, 0.0);
 
    // do iterations
+   int iter =0;
    for (std::size_t k = 1; k < maxiter; ++k)
    {
      // Q2 = A*Q1
@@ -267,7 +269,12 @@ int StandardInverseOffDiagonal(ISTLM &A, double shift, double tol, int maxiter,
   }
 
   // compute factorization of matrix
-  UMFPackFactorizedMatrix<ISTLM> F(A,1);
+  // UMFPackFactorizedMatrix<ISTLM> F(A,1);
+  // compute factorization of matrix
+  Dune::Timer timer;
+  Dune::Timer timer_factorization;
+  UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
+  auto time_factorization = timer.elapsed();
 
   // orthonormalize the columns before starting iterations
   orthonormalize_blocked(Q1);
