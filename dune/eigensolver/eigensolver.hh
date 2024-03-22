@@ -29,7 +29,8 @@ template <typename ISTLM, typename VEC>
 int StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxiter,
                                  int nev, std::vector<double> &eval,
                                  std::vector<VEC> &evec, int verbose = 0,
-                                 unsigned int seed = 123)
+                                 unsigned int seed = 123,
+                                 int stopperswitch = 0)
  {
     // types
     using block_type = typename ISTLM::block_type;
@@ -89,9 +90,13 @@ int StandardLargestWithNewStopper(ISTLM &A, double shift, double tol, int maxite
      // diag(D) = Q1T * Q2 
      dot_products_diagonal_blocked(s1, Q2, Q1);
 
-     // || Q1 * diag(D) - Q2 ||; 
      double frobenieus_norm = 0.0;
-     frobenieus_norm = stopping_criterion(s1, Q1, Q2);
+     if (stopperswitch == 0)
+        // ||Q1T * Q2 ||i,j (i!=j) - tol * ||Q1T * Q2||i,i;
+        frobenieus_norm = stopping_criterion_offdiagonal(tol, s1, Q1, Q2);
+     else if (stopperswitch == 1)
+        // || Q1 * diag(D) - Q2 ||;
+        frobenieus_norm = stopping_criterion(s1, Q1, Q2);
      if (k == 1)
        initial_norm = frobenieus_norm;
 

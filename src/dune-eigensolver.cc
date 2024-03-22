@@ -768,6 +768,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int verbose = ptree.get<int>("evl.verbose");
   unsigned int seed = ptree.get<unsigned int>("evl.seed");
   std::string method = ptree.get<std::string>("evl.method");
+  int stopperswitch = ptree.get<int> ("ev.stop");
 
   // first compute eigenvalues with arpack to great accuracy
   std::vector<double> eigenvalues_arpack(m, 0.0);
@@ -824,7 +825,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver_new_stopper;
     timer_eigensolver_new_stopper.reset();
-    essIterations = StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed);
+    essIterations = StandardLargestWithNewStopper(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
   }
    // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
@@ -994,9 +995,9 @@ int main(int argc, char **argv)
   //   threads[rank].join();
 
   std::cout << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
-  smallest_eigenvalues_convergence_test(ptree);
+  // smallest_eigenvalues_convergence_test(ptree);
 
-  // largest_eigenvalues_convergence_test(ptree);
+  largest_eigenvalues_convergence_test(ptree);
 
   return 0;
 }
