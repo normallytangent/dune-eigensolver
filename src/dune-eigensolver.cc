@@ -487,22 +487,29 @@ void RelativeResidual(std::vector<double> &eval,std::vector<double> &evalstop , 
 template <typename ISTLM>
 void unshift_matrix(ISTLM &A, double shift)
 {
-  for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-    for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-      if (row_iter.index() == col_iter.index())
-        for (int i = 0; i < ISTLM::block_type::rows; i++)
-          (*col_iter)[i][i] -= shift;
+  if (shift != 0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < ISTLM::block_type::rows; i++)
+            (*col_iter)[i][i] -= shift;
+  }
 }
 
 template <typename ISTLM>
-void unshift_matrix(ISTLM &A, ISTLM &B, double shift, double regularization)
+void unshift_matrix(ISTLM &A, ISTLM &B, double shift, double reg)
 {
-  A.axpy(-shift,B);
-  for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-    for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-      if (row_iter.index() == col_iter.index())
-        for (int i = 0; i < ISTLM::block_type::rows; i++)
-          (*col_iter)[i][i] -= regularization;
+  if (shift != 0)
+    A.axpy(-shift,B);
+  if (reg != 0.0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < ISTLM::block_type::rows; i++)
+            (*col_iter)[i][i] -= reg;
+  }
 }
 
 // this must be called sequentially
