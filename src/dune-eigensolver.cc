@@ -514,9 +514,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
   auto A = get_laplacian_dirichlet(N);
-  //auto A = get_laplacian_neumann(N);
-  // auto B = get_laplacian_B(N, overlap);
   auto B = get_identity(N);
+  // auto A = get_laplacian_neumann(N);
+  // auto B = get_laplacian_B(N, overlap);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
   //Dune::printmatrix(std::cout, A, "Unchanged", "");
@@ -572,7 +572,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
+    esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, 2);
     time_eigensolver = timer_eigensolver.elapsed();
     unshift_matrix(A, shift);
   }
@@ -580,9 +580,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    esIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed);
+    esIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
     time_eigensolver = timer_eigensolver.elapsed();
-    unshift_matrix(A, B, shift, regularization);
+    // unshift_matrix(A, B, shift, regularization);
   }
 
   // Add computation of the smallest eigenvalues with the new stopping criterion here
@@ -597,14 +597,14 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver_new_stopper;
     timer_eigensolver_new_stopper.reset();
-    essIterations = StandardInverseOffDiagonal(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
+    essIterations = StandardInverse(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
   }
   else if (method == "gen")
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    essIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed);
+    essIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver.elapsed();
   }
 
