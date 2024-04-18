@@ -4,7 +4,7 @@
 #include "multivector.hh"
 #include "umfpacktools.hh"
 #include "kernels_cpp.hh"
-
+#include "../../../../external/eigen/build/include/eigen3/Eigen/SVD"
 //#define VCINCLUDE 1
 //#define NEONINCLUDE 1
 
@@ -355,6 +355,66 @@ int GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
               << " time_factorization=" << time_factorization
               << " iterations=" << iter
               << std::endl;
+  return iter;
+}
+
+template <typename ISTLM, typename VEC>
+int SymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
+                        double reg, double tol, int maxiter, int nev,
+                        std::vector<double> &eval, std::vector<VEC> &evec,
+                        int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
+{
+  ISTLM A(inA);
+
+  using block_type = typename ISTLM::block_type;
+  const int b = 8;
+  const int br = block_type::rows;
+  const int bc = block_type::cols;
+  if (br != bc)
+    throw std::invalid_argument("SymmetricStewart: blocks of input matrix must be square!");
+
+  Dune::Timer timer;
+
+  const std::size_t n = A.N() * br;
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b;
+
+  MultiVector<double, b> Q1{n, m};
+  MultiVector<double, b> Q2{n, m};
+
+  // Apply shift
+  // Apply regularization
+  // Compute factorization of matrix
+
+  // B-orthonormalize and initialize Raleigh coefficients
+  std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
+  std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
+  
+  B_orthonormalize_blocked(B, Q1);
+  matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+  dot_products_diagonal_blocked(sA, Q2, Q1);
+  // adjust the shift
+  for (int i = 0; i < m; ++i)
+    ra2[i] = sA[i];
+
+  double initial_norm = 0;
+  int iter = 0;
+  double relerror = 0;
+  while (iter < maxiter)
+  {
+    matmul_inverse_tallskinny_blocked();
+    matr
+    // Orthonormalize
+    iter += 1;
+    matmul_inverse_tallskinny_blocked;
+    dot product;
+
+    // eigen
+    // timer
+    // mat mat
+    // eigen end
+    // Stopping criterion
+
+  }
   return iter;
 }
 
