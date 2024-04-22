@@ -714,19 +714,20 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
   std::cout << ": eigensolver with stopping criterion elapsed time " << time_eigensolver_new_stopper << std::endl;
 
-  std::cout << "N" << "     " << "M"
-                   << "     " << "TOL"
-                   << "           " << "ESARERROR"
-                   << "     " << "ESSTARERROR"
-                   << "     " << "ARPERROR"
-                   << "     " << "ESANERROR"
-                   << "     " << "ESSTANERROR"
-                   << "     " << "TIMERATIO"
-                   << "     " << "TIMEWSTOPRATIO"
-                   << "     " << "ARPACKITER"
-                   << "     " << "ES_ITER"
-                   << "     " << "ESS_ITER"
-                   << std::endl;
+  std::cout << "N "              << std::setw(5) <<
+              "M "             << std::setw(10) <<
+              "TOL "           << std::setw(15) <<
+              "ESARERROR "     << std::setw(20) <<
+              "ESSTARERROR "   << std::setw(15) <<
+              "ARPERROR "      << std::setw(20) <<
+              "ESANERROR "     << std::setw(20) <<
+              "ESSTANERROR "   << std::setw(15) <<
+              "TIMERATIO "     << std::setw(20) <<
+              "TIMEWSTOPRATIO "<< std::setw(15) <<
+              "ARPACKITER "   << std::setw(15) <<
+              "ES_ITER "      << std::setw(15) <<
+              "ESS_ITER"       <<
+              std::endl;
 
   std::cout << n << "   "
             << m << "   "
@@ -740,9 +741,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
             << maxerror3 << "      "
             << maxerror4 << "      "
             << time_eigensolver / time_arpack << "      "
-            << time_eigensolver_new_stopper / time_arpack << "     "
-            << arpackIterations << "      "
-            << esIterations << "      "
+            << time_eigensolver_new_stopper / time_arpack << "       "
+            << arpackIterations << "                "
+            << esIterations << "              "
             << essIterations << " \\\\"
             << std::endl;
   return 0;
