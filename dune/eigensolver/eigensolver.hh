@@ -4,7 +4,7 @@
 #include "multivector.hh"
 #include "umfpacktools.hh"
 #include "kernels_cpp.hh"
-#include "../../../../external/eigen/build/include/eigen3/Eigen/SVD"
+#include "../../../../external/eigen/build/include/eigen3/Eigen/Eigenvalues"
 //#define VCINCLUDE 1
 //#define NEONINCLUDE 1
 
@@ -359,8 +359,8 @@ int GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
 }
 
 template <typename ISTLM, typename VEC>
-int SymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
-                        double reg, double tol, int maxiter, int nev,
+int SymmetricStewart(ISTLM &inA, double shift,
+                        double tol, int maxiter, int nev,
                         std::vector<double> &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
@@ -381,38 +381,67 @@ int SymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
 
-  // Apply shift
+  // Initialize with random numbers
+  std::mt19937 urbg{seed};
+  std::normal_distribution<double> generator{0.0, 1.0};
+  for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
+    for (std::size_t i = 0; i < Q1.rows(); ++i)
+      for (std::size_t j = 0; j < b; ++j)
+        Q1(i, bj + j) = generator(urbg);
+
+  // Apply shift; overwrites input matrix A
+  if (shift != 0.0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < br; i++)
+            (*col_iter)[i][i] += shift;
+  }
   // Apply regularization
   // Compute factorization of matrix
 
-  // B-orthonormalize and initialize Raleigh coefficients
+  //Initialize Raleigh coefficients
   std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
-  
-  B_orthonormalize_blocked(B, Q1);
-  matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-  dot_products_diagonal_blocked(sA, Q2, Q1);
-  // adjust the shift
-  for (int i = 0; i < m; ++i)
-    ra2[i] = sA[i];
+
+ // Inverse 
+ // Orthonormalize
+  orthonormalize_blocked(Q1);
+
+  // B = Q2T
+  Eigen::MatrixXd B(Q2.cols(), Q1.cols());
 
   double initial_norm = 0;
   int iter = 0;
   double relerror = 0;
-  while (iter < maxiter)
+  for(iter = 1; iter < maxiter; ++iter)
   {
-    matmul_inverse_tallskinny_blocked();
-    matr
-    // Orthonormalize
-    iter += 1;
-    matmul_inverse_tallskinny_blocked;
-    dot product;
+    // Q2 = A * Q1
+    matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+    // Q1 = A * Q2 = A * A * Q1
+    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
+    // Q2T = Q2^T * Q1 = A * Q2 = A * A * Q1
+    dot_products_all_blocked(Q2T,Q2,Q1);
+  
+    for (size_t i = 0; i < Q2.cols(); ++i)
+      for (size_t j = 0; j < Q1.cols(); ++j)
+        B(i,j) = Q2T[i][j];
 
-    // eigen
-    // timer
-    // mat mat
+    // Timer
+    // Matrix decomposition of Q2T or B
+    // B = S * D * S^T
+    Eigen::EigenSolver<Eigen::MatrixXd> es(B);
+    Eigen::MatrixXcd S = es.eigenvectors();
+    // Q1 = Q2 * S
+
     // eigen end
+    // timer end
     // Stopping criterion
+
+    //matmul_sparse_tallskinny_blocked(Q1,Q2,S)
+    // swap
+    // Orthonormalize
 
   }
   return iter;
