@@ -579,9 +579,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, 2);
+    esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
     time_eigensolver = timer_eigensolver.elapsed();
-    unshift_matrix(A, shift);
+    // unshift_matrix(A, shift);
   }
   else if (method == "gen")
   {

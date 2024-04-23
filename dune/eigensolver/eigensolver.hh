@@ -26,11 +26,13 @@
 /** \brief solve standard eigenvalue problem with shift invert to obtain
      smallest eigenvalues. Use the norm of the offdiagonal elements to stop.*/
 template <typename ISTLM, typename VEC>
-int StandardInverse(ISTLM &A, double shift, double tol, int maxiter,
+int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
                                 int nev, std::vector<double> &eval, 
                                 std::vector<VEC> &evec, int verbose = 0,
                                 unsigned int seed = 123, int stopperswitch=0)
 {
+  ISTLM A(inA);
+
   // types
   using block_type = typename ISTLM::block_type;
 
