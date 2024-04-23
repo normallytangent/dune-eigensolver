@@ -413,25 +413,26 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
   // B = Q2T
   Eigen::MatrixXd B(Q2.cols(), Q1.cols());
+  Eigen::MatrixXd C(Q2.cols(), Q1.cols());
   Eigen::MatrixXd Eig_Q2(Q2.rows(), Q2.cols());
   Eigen::MatrixXd Eig_Q1(Q1.rows(), Q1.cols());
+
+  // Q2 = A * Q1
+  matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+  // Q1 = A * Q2 = A * A * Q1
+  matmul_sparse_tallskinny_blocked(Q1, A, Q2);
+  // Q2T = Q2^T * Q1 = A * Q2 = A * A * Q1
+  dot_products_all_blocked(Q2T,Q2,Q1);
+
+  for (size_t i = 0; i < Q2.cols(); ++i)
+    for (size_t j = 0; j < Q1.cols(); ++j)
+      B(i,j) = Q2T[i][j];
 
   double initial_norm = 0;
   int iter = 0;
   double relerror = 0;
   for(iter = 1; iter < maxiter; ++iter)
   {
-    // Q2 = A * Q1
-    matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-    // Q1 = A * Q2 = A * A * Q1
-    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-    // Q2T = Q2^T * Q1 = A * Q2 = A * A * Q1
-    dot_products_all_blocked(Q2T,Q2,Q1);
-  
-    for (size_t i = 0; i < Q2.cols(); ++i)
-      for (size_t j = 0; j < Q1.cols(); ++j)
-        B(i,j) = Q2T[i][j];
-
     // Timer
     // Matrix decomposition of Q2T or B
     // B = S * D * S^T
@@ -444,15 +445,16 @@ int SymmetricStewart(ISTLM &inA, double shift,
       s1[i] = D(i,i);
 
     Eigen::MatrixXd S = es.pseudoEigenvectors();
-
+    // C = S.inverse() * B * S;
+    B = D;
     for (size_t i = 0; i < Q2.rows(); ++i)
       for (size_t j = 0; j < Q2.cols(); ++j)
-       Eig_Q2(i,j) = Q2(i,j);
+        Eig_Q2(i,j) = Q2(i,j);
 
     // Q1 = Q2 * S
-    // Eig_Q1 = Eig_Q2 * S;
-    // matmul_sparse_tallskinny_blocked(Q1, Q2T, Q2);
     Eig_Q1 = Eig_Q2 * S;
+    // matmul_sparse_tallskinny_blocked(Q1, Q2T, Q2);
+    //Eig_Q1 = Eig_Q2 * S;
     for (size_t i = 0; i < Q1.rows(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
         Q1(i,j) = Eig_Q1(i,j);
@@ -462,7 +464,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
     // Stopping criterion
 
     // Orthonormalize
-    orthonormalize_blocked(Q1);
+    std::swap(Q1,Q2);
   }
 
   if (stopperswitch == 0 ){
@@ -485,7 +487,9 @@ int SymmetricStewart(ISTLM &inA, double shift,
   // assumes that output is allocated to the correct size
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
-      evec[j][i] = Q1(i, j);
+      evec[j][i] = Q2(i, j);
+
+  std::sort(eval.begin(),eval.end(), std::greater{});
 
   return iter;
 }
