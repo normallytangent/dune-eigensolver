@@ -404,7 +404,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
   // Compute factorization of matrix
 
   //Initialize Raleigh coefficients
-  std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
+  std::vector<double> s1(m, 0.0), s2(m, 0.0), sA(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
 
  // Inverse 
@@ -413,6 +413,8 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
   // B = Q2T
   Eigen::MatrixXd B(Q2.cols(), Q1.cols());
+  Eigen::MatrixXd Eig_Q2(Q2.rows(), Q2.cols());
+  Eigen::MatrixXd Eig_Q1(Q1.rows(), Q1.cols());
 
   double initial_norm = 0;
   int iter = 0;
@@ -434,18 +436,57 @@ int SymmetricStewart(ISTLM &inA, double shift,
     // Matrix decomposition of Q2T or B
     // B = S * D * S^T
     Eigen::EigenSolver<Eigen::MatrixXd> es(B);
-    Eigen::MatrixXcd S = es.eigenvectors();
+    
+    Eigen::MatrixXd D = es.pseudoEigenvalueMatrix();
+    // std::cout << "The pseudo-eigenvalue matrix D is:" << std::endl << D << std::endl;
+
+    for (size_t i = 0; i < Q2.cols(); ++i)
+      s1[i] = D(i,i);
+
+    Eigen::MatrixXd S = es.pseudoEigenvectors();
+
+    for (size_t i = 0; i < Q2.rows(); ++i)
+      for (size_t j = 0; j < Q2.cols(); ++j)
+       Eig_Q2(i,j) = Q2(i,j);
+
     // Q1 = Q2 * S
+    // Eig_Q1 = Eig_Q2 * S;
+    // matmul_sparse_tallskinny_blocked(Q1, Q2T, Q2);
+    Eig_Q1 = Eig_Q2 * S;
+    for (size_t i = 0; i < Q1.rows(); ++i)
+      for (size_t j = 0; j < Q1.cols(); ++j)
+        Q1(i,j) = Eig_Q1(i,j);
 
     // eigen end
     // timer end
     // Stopping criterion
 
-    //matmul_sparse_tallskinny_blocked(Q1,Q2,S)
-    // swap
     // Orthonormalize
-
+    orthonormalize_blocked(Q1);
   }
+
+  if (stopperswitch == 0 ){
+    for (auto &x : s1)
+     x-=shift;
+    for (int j = 0; j < nev; ++j)
+      std::cout << j << " " << s1[j] << std::endl;
+    for (int j = 0; j < nev; ++j)
+      eval[j] = s1[j];
+  }
+  else if (stopperswitch == 2){
+    for (auto &x : s2)
+     x-=shift;
+    for (int j = 0; j < nev; ++j)
+      std::cout << j << " " << s2[j] << std::endl;
+    for (int j = 0; j < nev; ++j)
+      eval[j] = s2[j];
+  }
+
+  // assumes that output is allocated to the correct size
+  for (int j = 0; j < nev; ++j)
+    for (int i = 0; i < n; ++i)
+      evec[j][i] = Q1(i, j);
+
   return iter;
 }
 
