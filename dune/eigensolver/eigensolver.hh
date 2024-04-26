@@ -366,6 +366,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
                         std::vector<double> &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
+  std::cout << "SYMMETRIC STEWART:\n";
   ISTLM A(inA);
 
   using block_type = typename ISTLM::block_type;
@@ -402,69 +403,70 @@ int SymmetricStewart(ISTLM &inA, double shift,
   }
   // Apply regularization
   // Compute factorization of matrix
+  UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
+ // Inverse
 
   //Initialize Raleigh coefficients
   std::vector<double> s1(m, 0.0), s2(m, 0.0), sA(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
 
- // Inverse 
- // Orthonormalize
-  orthonormalize_blocked(Q1);
-
-  // B = Q2T
   Eigen::MatrixXd B(Q2.cols(), Q1.cols());
-  Eigen::MatrixXd C(Q2.cols(), Q1.cols());
   Eigen::MatrixXd Eig_Q2(Q2.rows(), Q2.cols());
   Eigen::MatrixXd Eig_Q1(Q1.rows(), Q1.cols());
 
-  // Q2 = A * Q1
-  matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-  // Q1 = A * Q2 = A * A * Q1
-  matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-  // Q2T = Q2^T * Q1 = A * Q2 = A * A * Q1
-  dot_products_all_blocked(Q2T,Q2,Q1);
-
-  for (size_t i = 0; i < Q2.cols(); ++i)
-    for (size_t j = 0; j < Q1.cols(); ++j)
-      B(i,j) = Q2T[i][j];
+  // Orthonormalize
+  orthonormalize_blocked(Q1);
 
   double initial_norm = 0;
   int iter = 0;
   double relerror = 0;
   for(iter = 1; iter < maxiter; ++iter)
   {
-    // Timer
-    // Matrix decomposition of Q2T or B
-    // B = S * D * S^T
-    Eigen::EigenSolver<Eigen::MatrixXd> es(B);
-    
-    Eigen::MatrixXd D = es.pseudoEigenvalueMatrix();
-    // std::cout << "The pseudo-eigenvalue matrix D is:" << std::endl << D << std::endl;
+    // matmul_inverse_tallskinny_blocked(Q1, F, Q2);
+    // orthonormalize_blocked(Q1);
 
-    for (size_t i = 0; i < Q2.cols(); ++i)
-      s1[i] = D(i,i);
-
-    Eigen::MatrixXd S = es.pseudoEigenvectors();
-    // C = S.inverse() * B * S;
-    B = D;
+    // Q2 = A * Q1
+    matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+    // Q1 = A * Q2 = A * A * Q1
+   // matmul_sparse_tallskinny_blocked(Q1, A, Q2);
     for (size_t i = 0; i < Q2.rows(); ++i)
       for (size_t j = 0; j < Q2.cols(); ++j)
         Eig_Q2(i,j) = Q2(i,j);
 
+    for (size_t i = 0; i < Q1.rows(); ++i)
+      for (size_t j = 0; j < Q1.cols(); ++j)
+        Eig_Q1(i,j) = Q1(i,j);
+
+    B = Eig_Q1.transpose() * Eig_Q2;
+
+    // Q2T = Q2^T * Q1 = A * Q2 = A * A * Q1
+    //dot_products_all_blocked(Q2T,Q2,Q1);
+
+    //for (size_t i = 0; i < Q2.cols(); ++i)
+    //  for (size_t j = 0; j < Q1.cols(); ++j)
+    //    B(i,j) = Q2T[i][j];
+
+    // Timer
+    // Matrix decomposition of Q2T or B
+    // B = S * D * S^T
+    Eigen::EigenSolver<Eigen::MatrixXd> es(B);
+    Eigen::MatrixXd D = es.pseudoEigenvalueMatrix();
+    Eigen::MatrixXd S = es.pseudoEigenvectors();
+
+    for (size_t i = 0; i < Q2.cols(); ++i)
+      s1[i] = B(i,i);
+
     // Q1 = Q2 * S
-    Eig_Q1 = Eig_Q2 * S;
     // matmul_sparse_tallskinny_blocked(Q1, Q2T, Q2);
-    //Eig_Q1 = Eig_Q2 * S;
+    Eig_Q1 = Eig_Q1 * S;
+
     for (size_t i = 0; i < Q1.rows(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
         Q1(i,j) = Eig_Q1(i,j);
 
-    // eigen end
+    // std::swap(Q1, Q2);
     // timer end
     // Stopping criterion
-
-    // Orthonormalize
-    std::swap(Q1,Q2);
   }
 
   if (stopperswitch == 0 ){
