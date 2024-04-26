@@ -532,7 +532,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int verbose = ptree.get<int>("evl.verbose");
   unsigned int seed = ptree.get<unsigned int>("evl.seed");
   std::string method = ptree.get<std::string>("evl.method");
-  int stopperswitch = ptree.get<int> ("ev.stop");
+  int stopperswitch = ptree.get<int> ("evl.stop");
 
   // first compute eigenvalues with arpack to great accuracy
   std::vector<double> eigenvalues_arpack(m, 0.0);
