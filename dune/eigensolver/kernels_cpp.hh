@@ -605,6 +605,33 @@ double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
   return norm;
 }
 
+/** @brief multiply tall skinny matrix with dense matrix stored in a multivector with block size 1
+ *
+ */
+template <typename MV>
+void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const MV &Se)
+{
+  std::size_t n = Qin.rows();
+  std::size_t m = Qin.cols();
+  auto pin1 = &(Qin(0, 0));
+  auto pin2 = &(Se(0, 0));
+  auto pout = &(Qout(0, 0));
+
+  for (int j = 0; j < m; j++)
+  {
+    for (auto row_iter = 0; row_iter < m; ++row_iter)
+    {
+      auto i = row_iter;
+      pout[i] = 0.0;
+      for (auto col_iter = 0; col_iter < m; ++col_iter)
+        pout[i] += pin1[col_iter] * pin2[col_iter];
+    }
+    pin1 += n;
+    pin2 += m;
+    pout += n;
+  }
+}
+
 /** @brief multiply sparse matrix with tall skinny matrix stored in a multivector with block size 1
  *
  */

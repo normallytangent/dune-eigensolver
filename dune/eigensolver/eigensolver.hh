@@ -383,6 +383,8 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
+  MultiVector<double, b> Se{m, m};
+  MultiVector<double, b> Q3{n, m};
 
   // Initialize with random numbers
   std::mt19937 urbg{seed};
@@ -404,32 +406,28 @@ int SymmetricStewart(ISTLM &inA, double shift,
   // Apply regularization
   // Compute factorization of matrix
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
- // Inverse
 
   //Initialize Raleigh coefficients
-  std::vector<double> s1(m, 0.0), s2(m, 0.0), sA(m, 0.0);
+  std::vector<double> s1(m, 0.0), s2(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
+//   std::vector<std::vector<double>> Se (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
+  // Dune::BCRSMatrix<Dune::FieldMatrix<double,1,1>> Se;
 
-  Eigen::MatrixXd B(Q2.cols(), Q1.cols());
-  Eigen::MatrixXd Eig_Q2(Q2.rows(), Q2.cols());
-  Eigen::MatrixXd Eig_Q1(Q1.rows(), Q1.cols());
+  Eigen::MatrixXd S, D, B(Q2.cols(), Q1.cols());
 
   // Orthonormalize
   orthonormalize_blocked(Q2);
 
-  double initial_norm = 0;
+  double partial_off = 0.0;
+  double partial_diag = 0.0;
+  double norm = 0.0;
   int iter = 0;
-  double relerror = 0;
   for(iter = 1; iter < maxiter; ++iter)
   {
     matmul_inverse_tallskinny_blocked(Q1, F, Q2);
-
     orthonormalize_blocked(Q1);
-    // Q2 = A * Q1
-    matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-
-    // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
-    dot_products_all_blocked(Q2T,Q1,Q2);
+    matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
+    dot_products_all_blocked(Q2T,Q1,Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
@@ -437,53 +435,45 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
     Dune::Timer timer;
     Dune::Timer timer_eigendecomposition;
-    // Matrix decomposition of Q2T or B = S * D * S^T
-    Eigen::EigenSolver<Eigen::MatrixXd> es(B);
-    Eigen::MatrixXd D = es.pseudoEigenvalueMatrix();
-    Eigen::MatrixXd S = es.pseudoEigenvectors();
+    Eigen::EigenSolver<Eigen::MatrixXd> es(B); // Matrix decomposition of Q2T or B = S * D * S^T
+    D = es.pseudoEigenvalueMatrix();
+    S = es.pseudoEigenvectors();
     auto time_eigendecomposition = timer.elapsed();
-
-    for (size_t i = 0; i < Q1.rows(); ++i)
-      for (size_t j = 0; j < Q1.cols(); ++j)
-        Eig_Q1(i,j) = Q1(i,j);
-
-    if (verbose > 0)
-      std::cout << "The resulting eigvec should span the same space:" << std::endl
-    << Eig_Q1 << std::endl << std::endl;
 
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
         Q2T[i][j] = B(i,j);
 
-    // Q1 = Q1 * S
-    Eig_Q1 = Eig_Q1 * S;
-    for (size_t i = 0; i < Q1.rows(); ++i)
-      for (size_t j = 0; j < Q1.cols(); ++j)
-        Q1(i,j) = Eig_Q1(i,j);
-
-    // std::swap(Q1, Q2);
-    // Stopping criterion
     for (size_t i = 0; i < Q2.cols(); ++i)
-      s1[i] = D(i,i);
+      for (size_t j = 0; j < Q1.cols(); ++j)
+        Se(i,j) = S(i,j);
 
+    // Q2 = Q2 * Se; // Q1 = Q1 * S
+    matmul_tallskinny_dense_naive(Q2, Q2, Se);
+
+    // Stopping criterion
+    for (std::size_t i = 0; i < Q2.cols(); ++i)
+      for (std::size_t j = 0; j < Q1.cols(); ++j)
+        if ( i == j )
+          partial_diag += Q2T[i][j] * Q2T[i][j];
+        else
+          partial_off += Q2T[i][j] * Q2T[i][j];
+
+    if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+      break;
+    std::swap(Q1, Q2);
   }
 
-  if (stopperswitch == 0 ){
-    for (auto &x : s1)
-     x-=shift;
-    for (int j = 0; j < nev; ++j)
-      std::cout << j << " " << s1[j] << std::endl;
-    for (int j = 0; j < nev; ++j)
-      eval[j] = s1[j];
-  }
-  else if (stopperswitch == 2){
-    for (auto &x : s2)
-     x-=shift;
-    for (int j = 0; j < nev; ++j)
-      std::cout << j << " " << s2[j] << std::endl;
-    for (int j = 0; j < nev; ++j)
-      eval[j] = s2[j];
-  }
+  for (size_t i = 0; i < nev; ++i)
+    eval[i] = D(i,i) - shift;
+
+  //for (auto &x : s1)
+  //  x-=shift;
+  //for (int j = 0; j < nev; ++j)
+  //  eval[j] = s1[j];
+
+  for (int j = 0; j < nev; ++j)
+    std::cout << j << " " << eval[j] << std::endl;
 
   // assumes that output is allocated to the correct size
   for (int j = 0; j < nev; ++j)
