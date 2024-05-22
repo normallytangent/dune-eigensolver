@@ -403,8 +403,11 @@ int SymmetricStewart(ISTLM &inA, double shift,
           for (int i = 0; i < br; i++)
             (*col_iter)[i][i] += shift;
   }
+
   // Compute factorization of matrix
+  Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
+  auto time_factorization = timer.elapsed();
 
   //Initialize Raleigh coefficients
   std::vector<double> s1(m, 0.0), s2(m, 0.0);
@@ -430,7 +433,6 @@ int SymmetricStewart(ISTLM &inA, double shift,
       for (size_t j = 0; j < Q1.cols(); ++j)
         B(i,j) = Q2T[i][j];
 
-    Dune::Timer timer;
     Dune::Timer timer_eigendecomposition;
     Eigen::EigenSolver<Eigen::MatrixXd> es(B); // Matrix decomposition of Q2T or B = S * D * S^T
     D = es.pseudoEigenvalueMatrix();
@@ -479,6 +481,14 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
   std::sort(eval.begin(),eval.end()); //, std::greater{});
 
+  auto time = timer.elapsed();
+  if (verbose > 0)
+    std::cout << "SymmetricStewart: "
+              << " time_total=" << time
+              << " time_factorization=" << time_factorization
+              << " time_eigendecomposition=" << time_eigendecomposition
+              << " iterations=" << iter
+              << std::endl;
   return iter;
 }
 
