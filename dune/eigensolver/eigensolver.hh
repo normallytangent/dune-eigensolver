@@ -371,19 +371,19 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
   using block_type = typename ISTLM::block_type;
   const int b = 8;
-  const int br = block_type::rows;
-  const int bc = block_type::cols;
+  const int br = block_type::rows; // = 1
+  const int bc = block_type::cols; // = 1
   if (br != bc)
     throw std::invalid_argument("SymmetricStewart: blocks of input matrix must be square!");
 
   Dune::Timer timer;
 
   const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b;
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible multiple of the blocksize
 
+  // Iteration vectors
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
-  MultiVector<double, b> Se{m, m};
   MultiVector<double, b> Q3{n, m};
 
   // Initialize with random numbers
@@ -403,15 +403,12 @@ int SymmetricStewart(ISTLM &inA, double shift,
           for (int i = 0; i < br; i++)
             (*col_iter)[i][i] += shift;
   }
-  // Apply regularization
   // Compute factorization of matrix
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
 
   //Initialize Raleigh coefficients
   std::vector<double> s1(m, 0.0), s2(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
-//   std::vector<std::vector<double>> Se (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
-  // Dune::BCRSMatrix<Dune::FieldMatrix<double,1,1>> Se;
 
   Eigen::MatrixXd S, D, B(Q2.cols(), Q1.cols());
 
