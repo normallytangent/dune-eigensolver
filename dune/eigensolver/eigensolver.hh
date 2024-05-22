@@ -376,6 +376,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
   if (br != bc)
     throw std::invalid_argument("SymmetricStewart: blocks of input matrix must be square!");
 
+  // Measure total time
   Dune::Timer timer;
 
   const std::size_t n = A.N() * br;
@@ -385,6 +386,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
   MultiVector<double, b> Q3{n, m};
+  MultiVector<double, b> Se{m, m};
 
   // Initialize with random numbers
   std::mt19937 urbg{seed};
@@ -407,7 +409,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
   // Compute factorization of matrix
   Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
-  auto time_factorization = timer.elapsed();
+  auto time_factorization = timer_factorization.elapsed();
 
   //Initialize Raleigh coefficients
   std::vector<double> s1(m, 0.0), s2(m, 0.0);
@@ -418,6 +420,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
   // Orthonormalize
   orthonormalize_blocked(Q2);
 
+  double time_eigendecomposition;
   double partial_off = 0.0;
   double partial_diag = 0.0;
   double norm = 0.0;
@@ -431,13 +434,13 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
-        B(i,j) = Q2T[i][j];
+       B(i,j) = Q2T[i][j];
 
     Dune::Timer timer_eigendecomposition;
     Eigen::EigenSolver<Eigen::MatrixXd> es(B); // Matrix decomposition of Q2T or B = S * D * S^T
     D = es.pseudoEigenvalueMatrix();
     S = es.pseudoEigenvectors();
-    auto time_eigendecomposition = timer.elapsed();
+    time_eigendecomposition = timer_eigendecomposition.elapsed();
 
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
@@ -447,8 +450,16 @@ int SymmetricStewart(ISTLM &inA, double shift,
       for (size_t j = 0; j < Q1.cols(); ++j)
         Se(i,j) = S(i,j);
 
-    // Q2 = Q2 * Se; // Q1 = Q1 * S
-    matmul_tallskinny_dense_naive(Q2, Q2, Se);
+    matmul_tallskinny_dense_naive(Q2, Q2, Se); // Q2 = Q2 * Se;
+
+    if (verbose > 1)
+    {
+      std::cout << B << std::endl << std::endl;
+      for (size_t i = 0; i < Q2.cols(); ++i)
+        for (size_t j = 0; j < Q1.cols(); ++j)
+          std::cout << Q2T[i][j] << " ";
+      show(&(Q2(0,0)), Q2.rows(),Q2.cols());
+    }
 
     // Stopping criterion
     for (std::size_t i = 0; i < Q2.cols(); ++i)
@@ -466,20 +477,14 @@ int SymmetricStewart(ISTLM &inA, double shift,
   for (size_t i = 0; i < nev; ++i)
     eval[i] = D(i,i) - shift;
 
-  //for (auto &x : s1)
-  //  x-=shift;
-  //for (int j = 0; j < nev; ++j)
-  //  eval[j] = s1[j];
+  if (verbose > 1)
+    show(eval);
 
-  for (int j = 0; j < nev; ++j)
-    std::cout << j << " " << eval[j] << std::endl;
+  std::sort(eval.begin(),eval.end());
 
-  // assumes that output is allocated to the correct size
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
       evec[j][i] = Q2(i, j);
-
-  std::sort(eval.begin(),eval.end()); //, std::greater{});
 
   auto time = timer.elapsed();
   if (verbose > 0)
