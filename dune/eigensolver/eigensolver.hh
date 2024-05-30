@@ -43,6 +43,9 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
   if (br!=bc)
     throw std::invalid_argument("StandardInverseOffDiagonal: blocks of input matrix must be square");
 
+  // Measure total time
+  Dune::Timer timer;
+
   // set the other sizes
   const std::size_t n = A.N() * br;
   const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; //= 32, make m the smallest possible  multiple of the blocksize
@@ -70,12 +73,9 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
   }
 
   // compute factorization of matrix
-  // UMFPackFactorizedMatrix<ISTLM> F(A,1);
-  // compute factorization of matrix
-  Dune::Timer timer;
   Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
-  auto time_factorization = timer.elapsed();
+  auto time_factorization = timer_factorization.elapsed();
 
   // orthonormalize the columns before starting iterations
   orthonormalize_blocked(Q1);
@@ -85,6 +85,7 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(),0.0));
 
   double initial_norm = 0.0;
+  double time_dot_product_all, time_dot_product_diagonal;
   int k = 0;
   // do iterations
   for (k = 1; k < maxiter; ++k)
@@ -99,8 +100,12 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
     // Q1 = A*Q2
     matmul_sparse_tallskinny_blocked(Q1, A, Q2);
     // diag(D) = Q2^T * Q1
+    Dune::Timer timer_dot_product_all;
     dot_products_all_blocked(Q2T,Q2, Q1);
+    time_dot_product_all = timer_dot_product_all.elapsed();
+    Dune::Timer timer_dot_product_diagonal;
     dot_products_diagonal_blocked(s1, Q2, Q1);
+    time_dot_product_diagonal = timer_dot_product_diagonal.elapsed();
 
      double frobenius_norm = 0.0;
      double partial_off = 0.0;
@@ -113,14 +118,11 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
       for (std::size_t i = 0; i < Q2.cols(); ++i)
         for (std::size_t j = 0; j < Q1.cols(); ++j)
           if (i == j)
-          {
-            partial_diag += Q2T[i][i] *Q2T[i][i];
-            // s1[i] = Q2T[i][i];
-          }
+            partial_diag += Q2T[i][i] * Q2T[i][i];
           else
-            partial_off += Q2T[i][j]*Q2T[i][j];
+            partial_off += Q2T[i][j] * Q2T[i][j];
 
-      if (verbose > 0)
+      if (verbose > 1)
          std::cout << k << ": "<< partial_off << "; " << partial_diag << std::endl;
 
       if (k > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
@@ -132,8 +134,8 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
        double distance = 0.0;
        for (int i = 0; i < s1.size(); i++)
          distance = std::max(distance, std::abs(s1[i] - s2[i]));
-       if (verbose > 0 && k > 1)
-         std::cout << "iter=" << k << " " << distance << std::endl;
+       if (verbose > 1)
+         std::cout << k << ": " << distance << std::endl;
        std::swap(s1, s2);
 
        if (k == 1)
@@ -148,20 +150,18 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
   }
 
   if (stopperswitch == 0 ){
-    for (auto &x : s1)
-     x-=shift;
     for (int j = 0; j < nev; ++j)
-      std::cout << j << " " << s1[j] << std::endl;
-    for (int j = 0; j < nev; ++j)
-      eval[j] = s1[j];
+      eval[j] = s1[j] - shift;
+
+    if (verbose > 1)
+      show(eval);
   }
   else if (stopperswitch == 2){
-    for (auto &x : s2)
-     x-=shift;
     for (int j = 0; j < nev; ++j)
-      std::cout << j << " " << s2[j] << std::endl;
-    for (int j = 0; j < nev; ++j)
-      eval[j] = s2[j];
+      eval[j] = s2[j] - shift;
+
+    if (verbose > 1)
+    show(eval);
   }
 
   // assumes that output is allocated to the correct size
@@ -169,6 +169,18 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
     for (int i = 0; i < n; ++i)
       evec[j][i] = Q1(i, j);
   return k;
+
+  auto time = timer.elapsed();
+  if (verbose > 0)
+  {
+    std::cout << "# StandardInverse: "
+              << " time_total=" << time
+              << " time_factorization=" << time_factorization
+              << " time_dot_product_all=" << time_dot_product_all
+              << " time_dot_product_diagonal=" << time_dot_product_diagonal
+              << " iterations=" << k
+              << std::endl;
+  }
 }
 
 /**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
@@ -352,7 +364,7 @@ int GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
 
   auto time = timer.elapsed();
   if (verbose > 0)
-    std::cout << "GeneralizedInverse: "
+    std::cout << "# GeneralizedInverse: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " iterations=" << iter
@@ -366,7 +378,6 @@ int SymmetricStewart(ISTLM &inA, double shift,
                         std::vector<double> &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
-  std::cout << "SYMMETRIC STEWART:\n";
   ISTLM A(inA);
 
   using block_type = typename ISTLM::block_type;
@@ -469,8 +480,12 @@ int SymmetricStewart(ISTLM &inA, double shift,
         else
           partial_off += Q2T[i][j] * Q2T[i][j];
 
+    if (verbose > 1)
+       std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
+
     if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
       break;
+
     std::swap(Q1, Q2);
   }
 
@@ -488,7 +503,7 @@ int SymmetricStewart(ISTLM &inA, double shift,
 
   auto time = timer.elapsed();
   if (verbose > 0)
-    std::cout << "SymmetricStewart: "
+    std::cout << "# SymmetricStewart: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_eigendecomposition=" << time_eigendecomposition
