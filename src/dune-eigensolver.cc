@@ -574,12 +574,11 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     v.resize(n);
 
   double time_eigensolver;
-  int esIterations;
   if (method == "std")
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    esIterations = StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
     time_eigensolver = timer_eigensolver.elapsed();
     // unshift_matrix(A, shift);
   }
@@ -587,7 +586,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    esIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
+    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
     time_eigensolver = timer_eigensolver.elapsed();
     // unshift_matrix(A, B, shift, regularization);
   }
@@ -599,20 +598,19 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     v.resize(n);
   
   double time_eigensolver_new_stopper;
-  int essIterations;
   if (method == "std")
   {
     Dune::Timer timer_eigensolver_new_stopper;
     timer_eigensolver_new_stopper.reset();
     // essIterations = StandardInverse(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
-    essIterations = SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
+    SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
   }
   else if (method == "gen")
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    essIterations = GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
+    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver.elapsed();
   }
 
@@ -725,9 +723,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
               "ESSTANERROR "   << std::setw(15) <<
               "TIMERATIO "     << std::setw(20) <<
               "TIMEWSTOPRATIO "<< std::setw(15) <<
-              "ARPACKITER "   << std::setw(15) <<
-              "ES_ITER "      << std::setw(15) <<
-              "ESS_ITER"       <<
+              "ARPACKITER "   <<
               std::endl;
 
   std::cout << n << "   "
@@ -743,9 +739,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
             << maxerror4 << "      "
             << time_eigensolver / time_arpack << "      "
             << time_eigensolver_new_stopper / time_arpack << "       "
-            << arpackIterations << "                "
-            << esIterations << "              "
-            << essIterations << " \\\\"
+            << arpackIterations << " \\\\"
             << std::endl;
   return 0;
 }

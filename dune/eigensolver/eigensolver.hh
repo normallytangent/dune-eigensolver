@@ -26,7 +26,7 @@
 /** \brief solve standard eigenvalue problem with shift invert to obtain
      smallest eigenvalues. Use the norm of the offdiagonal elements to stop.*/
 template <typename ISTLM, typename VEC>
-int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
+void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
                                 int nev, std::vector<double> &eval, 
                                 std::vector<VEC> &evec, int verbose = 0,
                                 unsigned int seed = 123, int stopperswitch=0)
@@ -168,7 +168,6 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
       evec[j][i] = Q1(i, j);
-  return k;
 
   auto time = timer.elapsed();
   if (verbose > 0)
@@ -188,7 +187,7 @@ int StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
  * Implementation assumes that A and B have the same sparsity pattern
  */
 template <typename ISTLM, typename VEC>
-int GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
+void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
                         double reg, double tol, int maxiter, int nev,
                         std::vector<double> &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
@@ -369,11 +368,10 @@ int GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
               << " time_factorization=" << time_factorization
               << " iterations=" << iter
               << std::endl;
-  return iter;
 }
 
 template <typename ISTLM, typename VEC>
-int SymmetricStewart(ISTLM &inA, double shift,
+void SymmetricStewart(ISTLM &inA, double shift,
                         double tol, int maxiter, int nev,
                         std::vector<double> &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
@@ -509,7 +507,6 @@ int SymmetricStewart(ISTLM &inA, double shift,
               << " time_eigendecomposition=" << time_eigendecomposition
               << " iterations=" << iter
               << std::endl;
-  return iter;
 }
 
 #endif // Udune_eigensolver_HH
