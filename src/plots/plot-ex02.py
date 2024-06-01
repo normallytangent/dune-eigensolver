@@ -4,67 +4,47 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # Export data
-def plot(status, xlabel, ylabel):
+def plot(status, tol, nev, xlabel, ylabel):
     match status:
         case 'tol':
-            iterlow = np.loadtxt('./measurements/maxiter_3_tol_1e-1_N_144_m_32', delimiter=' ',comments='#')
-            iterhigh = np.loadtxt('./measurements/maxiter_300_tol_1e-1_N_144_m_32', delimiter=' ',comments='#')
+            iterlow = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_100', delimiter=' ',comments='#')
+            itermid = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_200', delimiter=' ',comments='#')
+            iterhigh = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_300', delimiter=' ',comments='#')
+            itergiant = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_10k', delimiter=' ',comments='#')
 
-            plt.plot(iterlow[:,0],iterlow[:,5],label='iter 3, eigen',marker='o')
-            plt.plot(iterlow[:,1],iterlow[:,7],label='iter 3, stewart',marker='o')
-            plt.plot(iterhigh[:,0],iterhigh[:,5],label='iter 300, eigen',marker='o')
-            plt.plot(iterhigh[:,1],iterhigh[:,7],label='iter 3, stewart',marker='o')
+            plt.plot(np.arange(nev),iterlow[:,6],label='iter 100, eigen',marker='o')
+            plt.plot(np.arange(nev),iterlow[:,8],label='iter 100, stewart',marker='o')
+            plt.plot(np.arange(nev),iterlow[:,6],label='iter 200, eigen',marker='o')
+            plt.plot(np.arange(nev),iterlow[:,8],label='iter 200, stewart',marker='o')
+            plt.plot(np.arange(nev),iterhigh[:,6],label='iter 300, eigen',marker='o')
+            plt.plot(np.arange(nev),iterhigh[:,8],label='iter 300, stewart',marker='o')
+            plt.plot(np.arange(nev),itergiant[:,6],label='iter 10k, eigen',marker='o')
+            plt.plot(np.arange(nev),itergiant[:,8],label='iter 10k, stewart',marker='o')
 
             #plt.xscale('log')
-            #plt.yscale('log')
-
-            # Create legend
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
-            plt.title('Error in eigenvalues')
-            plt.legend(loc='lower right')
-
-            # Save plot
-            plt.savefig('img/2_2.pdf')
-
-            #Show plot
-            #plt.show()
-            
-        case 'bw':
-            bw1nodeB = np.loadtxt('./measurements/b-flood-1-node-500-itr.txt', delimiter=' ',comments='#')
-            bw1nodeNB = np.loadtxt('./measurements/nb-flood-1-node-500-itr.txt', delimiter=' ',comments='#')
-          
-            bw2nodeB = np.loadtxt('./measurements/b-flood-2-node-500-itr.txt', delimiter=' ',comments='#')
-            bw2nodeNB = np.loadtxt('./measurements/nb-flood-2-node-500-itr.txt', delimiter=' ',comments='#')
-
-            plt.plot(bw1nodeB[:,0],bw1nodeB[:,1],label='1 node, blocking',marker='o')
-            plt.plot(bw1nodeNB[:,0],bw1nodeNB[:,1],label='1 node, non-blocking',marker='^')
-            plt.plot(bw2nodeB[:,0],bw2nodeB[:,1],label='2 node, blocking',marker='o')
-            plt.plot(bw2nodeNB[:,0],bw2nodeNB[:,1],label='2 nodes, nonblockin',marker='^')
-
-            plt.xscale('log')
             plt.yscale('log')
 
             # Create legend
             plt.xlabel(xlabel)
             plt.ylabel(ylabel)
-            plt.title('Ex 2.3 Bandwidth Measurement using Ping Pong')
+            plt.title('Error in eigenvalues: N:40K, m:32, tol: 1e-3')
             plt.legend(loc='lower right')
 
             # Save plot
-            plt.savefig('plots/img/2_3.pdf')
+            plt.savefig('img/'+tol+'.pdf')
 
             #Show plot
-            # plt.show()
-
+            #plt.show()
+            
         case _:
             return "Try again!"
 
 def main():
-        plot('tol','Eigenvalues', 'Error in eigenvalues')
-        #plt.clf()
-        #plot('bw','Message size [KB]', 'Bandwidth [GB/sec]')
-
+    tol = ['tol_1e-1', 'tol_1e-2'] #, 'tol_1e-3']
+    nev = 32
+    for x in tol:
+        plot('tol', x, nev, 'Eigenvalues', 'Error in eigenvalues')
+        plt.clf()
 
 if __name__ == "__main__":
         main()
