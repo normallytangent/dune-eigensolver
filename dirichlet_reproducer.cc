@@ -2,7 +2,7 @@
 #include <math.h>
 #include <iostream>
 #include <vector>
-#include <numeric>
+#include <iomanip>
 
 #define SIZE 8
 
@@ -48,7 +48,10 @@ int main() {
   evd = eigenvalues_laplace_dirichlet_2d(NUM);
 
   for (auto &v: evd)
-    std::cout << v << std::endl;
+    std::cout << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
+              <<  v << std::endl;
 
   //std::vector<double> evn(NUM, 0.0);
 
