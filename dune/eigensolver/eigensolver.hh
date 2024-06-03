@@ -430,9 +430,6 @@ void SymmetricStewart(ISTLM &inA, double shift,
   orthonormalize_blocked(Q2);
 
   double time_eigendecomposition;
-  double partial_off = 0.0;
-  double partial_diag = 0.0;
-  double norm = 0.0;
   int iter = 0;
   for(iter = 1; iter < maxiter; ++iter)
   {
@@ -470,6 +467,8 @@ void SymmetricStewart(ISTLM &inA, double shift,
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
+    double partial_off = 0.0;
+    double partial_diag = 0.0;
     // Stopping criterion
     for (std::size_t i = 0; i < Q2.cols(); ++i)
       for (std::size_t j = 0; j < Q1.cols(); ++j)
@@ -586,8 +585,6 @@ for (int i =0; i < m; ++i)
   ra2[i] = sA[i] - shift;
 
   double time_eigendecomposition;
-  double partial_off = 0.0;
-  double partial_diag = 0.0;
   double norm = 0.0;
   int iter = 0;
   while ( iter < maxiter)
@@ -642,6 +639,8 @@ for (int i =0; i < m; ++i)
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
+    double partial_off = 0.0;
+    double partial_diag = 0.0;
     // Stopping criterion
     for (std::size_t i = 0; i < Q2.cols(); ++i)
       for (std::size_t j = 0; j < Q1.cols(); ++j)
