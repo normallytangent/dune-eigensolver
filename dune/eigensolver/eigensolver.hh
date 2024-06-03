@@ -242,7 +242,7 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
   // compute factorization of matrix
   Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
-  auto time_factorization = timer.elapsed();
+  auto time_factorization = timer_factorization.elapsed();
 
   // B-orthonormalize and initialize Raleigh coefficients
   std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
@@ -394,7 +394,6 @@ void SymmetricStewart(ISTLM &inA, double shift,
   // Iteration vectors
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
-  MultiVector<double, b> Q3{n, m};
   MultiVector<double, b> Se{m, m};
 
   // Initialize with random numbers
