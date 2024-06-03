@@ -576,10 +576,9 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
 
   //Initialize Raleigh coefficients
   std::vector<double> s1(m, 0.0), s2(m, 0.0);
-  std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
 
-  Eigen::MatrixXd S, D, B(Q2.cols(), Q1.cols());
+  Eigen::MatrixXd S, D, E(Q2.cols(), Q1.cols());
 
 #if defined(NEONINCLUDE)
   B_orthonormalize_neon_b8(B, Q2);
@@ -592,14 +591,11 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
 #else
   B_orthonormalize_blocked(B, Q2);
   matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-  dot_products_diagonal_blocked(sA, Q1, Q2);
+  dot_products_all_blocked(Q2T, Q1, Q2);
 #endif
 
-for (int i =0; i < m; ++i)
-  ra2[i] = sA[i] - shift;
-
   double time_eigendecomposition;
-  double norm = 0.0;
+  double time_matmul_dense;
   int iter = 0;
   while ( iter < maxiter)
   {
@@ -613,43 +609,48 @@ for (int i =0; i < m; ++i)
     matmul_inverse_tallskinny_blocked(Q1, F, Q2);
     orthonormalize_blocked(Q1);
 #endif
+
   iter += 1;
+
 #if defined(NEONINCLUDE)
     matmul_sparse_tallskinny_neon_b8(Q2, A, Q1); // Q2 = A * Q1
     dot_products_all_blocked(Q2T,Q1,Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 #elif defined(VCINCLUDE)
     matmul_sparse_tallskinny_avx2_b8(Q2, A, Q1); // Q2 = A * Q1
-    dot_products_all_blocked(Q2T,Q1,Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
+    dot_products_all_blocked(Q2T, Q1, Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 #else
     matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
-    dot_products_all_blocked(Q2T,Q1,Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
+    dot_products_all_blocked(Q2T, Q1, Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 #endif
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
-       B(i,j) = Q2T[i][j];
+       E(i,j) = Q2T[i][j];
+
+    if (verbose > 1)
+    {
+      std::cout << "BEFORE EIGEN" << std::endl;
+      std::cout << E << std::endl << std::endl;
+      show(&(Q2(0,0)), Q2.rows(),Q2.cols());
+    }
 
     Dune::Timer timer_eigendecomposition;
-    Eigen::EigenSolver<Eigen::MatrixXd> es(B); // Matrix decomposition of Q2T or B = S * D * S^T
+    Eigen::EigenSolver<Eigen::MatrixXd> es(E); // Matrix decomposition of Q2T or B = S * D * S^T
     D = es.pseudoEigenvalueMatrix();
     S = es.pseudoEigenvectors();
     time_eigendecomposition = timer_eigendecomposition.elapsed();
 
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
-        Q2T[i][j] = B(i,j);
-
-    for (size_t i = 0; i < Q2.cols(); ++i)
-      for (size_t j = 0; j < Q1.cols(); ++j)
         Se(i,j) = S(i,j);
 
+    Dune::Timer timer_matmul_dense;
     matmul_tallskinny_dense_naive(Q2, Q2, Se); // Q2 = Q2 * Se;
+    time_matmul_dense = timer_matmul_dense.elapsed();
 
     if (verbose > 1)
     {
-      std::cout << B << std::endl << std::endl;
-      for (size_t i = 0; i < Q2.cols(); ++i)
-        for (size_t j = 0; j < Q1.cols(); ++j)
-          std::cout << Q2T[i][j] << " ";
+      std::cout << "AFTER EIGEN" << std::endl;
+      std::cout << E << std::endl << std::endl;
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
@@ -686,10 +687,11 @@ for (int i =0; i < m; ++i)
 
   auto time = timer.elapsed();
   if (verbose > 0)
-    std::cout << "# SymmetricStewartGeneralized: "
+    std::cout << "# GeneralizedSymmetricStewart: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_eigendecomposition=" << time_eigendecomposition
+              << " time_matmul_dense=" << time_matmul_dense
               << " iterations=" << iter
               << std::endl;
 }

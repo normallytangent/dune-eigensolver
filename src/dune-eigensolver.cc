@@ -520,10 +520,10 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  auto A = get_laplacian_dirichlet(N);
-  auto B = get_identity(N);
-  // auto A = get_laplacian_neumann(N);
-  // auto B = get_laplacian_B(N, overlap);
+  // auto A = get_laplacian_dirichlet(N);
+  // auto B = get_identity(N);
+  auto A = get_laplacian_neumann(N);
+  auto B = get_laplacian_B(N, overlap);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
   //Dune::printmatrix(std::cout, A, "Unchanged", "");
@@ -609,7 +609,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
+    GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver.elapsed();
   }
 
