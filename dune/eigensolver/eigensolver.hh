@@ -171,7 +171,6 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
 
   auto time = timer.elapsed();
   if (verbose > 0)
-  {
     std::cout << "# StandardInverse: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
@@ -179,7 +178,6 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
               << " time_dot_product_diagonal=" << time_dot_product_diagonal
               << " iterations=" << k
               << std::endl;
-  }
 }
 
 /**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
@@ -256,9 +254,15 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
   matmul_sparse_tallskinny_avx2_b8(Q2, A, Q1);
   dot_products_diagonal_avx2_b8(sA, Q2, Q1);
 #else
+  double time_dot_product_all, time_dot_product_diagonal;
   B_orthonormalize_blocked(B, Q1);
   matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+  Dune::Timer timer_dot_product_all;
+  dot_products_all_blocked(Q2T,Q2, Q1);
+  time_dot_product_all = timer_dot_product_all.elapsed();
+  Dune::Timer timer_dot_product_diagonal;
   dot_products_diagonal_blocked(sA, Q2, Q1);
+  time_dot_product_diagonal = timer_dot_product_diagonal.elapsed();
 #endif
   for (int i = 0; i < m; ++i)
     ra2[i] = sA[i] - shift;
@@ -366,6 +370,8 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
     std::cout << "# GeneralizedInverse: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
+              << " time_dot_product_all=" << time_dot_product_all
+              << " time_dot_product_diagonal=" << time_dot_product_diagonal
               << " iterations=" << iter
               << std::endl;
 }
@@ -429,6 +435,7 @@ void SymmetricStewart(ISTLM &inA, double shift,
   orthonormalize_blocked(Q2);
 
   double time_eigendecomposition;
+  double time_matmul_dense;
   int iter = 0;
   for(iter = 1; iter < maxiter; ++iter)
   {
@@ -440,6 +447,13 @@ void SymmetricStewart(ISTLM &inA, double shift,
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
        B(i,j) = Q2T[i][j];
+
+    if (verbose > 1)
+    {
+      std::cout << "BEFORE EIGEN" << std::endl;
+      std::cout << B << std::endl << std::endl;
+      show(&(Q2(0,0)), Q2.rows(),Q2.cols());
+    }
 
     Dune::Timer timer_eigendecomposition;
     Eigen::EigenSolver<Eigen::MatrixXd> es(B); // Matrix decomposition of Q2T or B = S * D * S^T
@@ -455,14 +469,14 @@ void SymmetricStewart(ISTLM &inA, double shift,
       for (size_t j = 0; j < Q1.cols(); ++j)
         Se(i,j) = S(i,j);
 
+    Dune::Timer timer_matmul_dense;
     matmul_tallskinny_dense_naive(Q2, Q2, Se); // Q2 = Q2 * Se;
+    time_matmul_dense = timer_matmul_dense.elapsed();
 
     if (verbose > 1)
     {
+      std::cout << "AFTER EIGEN" << std::endl;
       std::cout << B << std::endl << std::endl;
-      for (size_t i = 0; i < Q2.cols(); ++i)
-        for (size_t j = 0; j < Q1.cols(); ++j)
-          std::cout << Q2T[i][j] << " ";
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
@@ -503,6 +517,7 @@ void SymmetricStewart(ISTLM &inA, double shift,
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_eigendecomposition=" << time_eigendecomposition
+              << " time_matmul_dense=" << time_matmul_dense
               << " iterations=" << iter
               << std::endl;
 }
