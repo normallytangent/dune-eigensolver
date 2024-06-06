@@ -520,10 +520,10 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  // auto A = get_laplacian_dirichlet(N);
-  // auto B = get_identity(N);
-  auto A = get_laplacian_neumann(N);
-  auto B = get_laplacian_B(N, overlap);
+  auto A = get_laplacian_dirichlet(N);
+  auto B = get_identity(N);
+  // auto A = get_laplacian_neumann(N);
+  // auto B = get_laplacian_B(N, overlap);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
   //Dune::printmatrix(std::cout, A, "Unchanged", "");
@@ -540,6 +540,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int verbose = ptree.get<int>("ev.verbose");
   unsigned int seed = ptree.get<unsigned int>("ev.seed");
   std::string method = ptree.get<std::string>("ev.method");
+  std::string submethod = ptree.get<std::string>("ev.submethod");
   int stopperswitch = ptree.get<int>("ev.stop");
 
   // first compute eigenvalues with arpack to great accuracy
@@ -573,7 +574,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     v.resize(n);
 
   double time_eigensolver;
-  if (method == "std")
+  if (method == "std" && submethod == "ftw")
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
@@ -581,7 +582,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     time_eigensolver = timer_eigensolver.elapsed();
     // unshift_matrix(A, shift);
   }
-  else if (method == "gen")
+  else if (method == "gen" && submethod == "ftw")
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
@@ -597,7 +598,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     v.resize(n);
   
   double time_eigensolver_new_stopper;
-  if (method == "std")
+  if (method == "std" && submethod == "stw")
   {
     Dune::Timer timer_eigensolver_new_stopper;
     timer_eigensolver_new_stopper.reset();
@@ -605,7 +606,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
   }
-  else if (method == "gen")
+  else if (method == "gen" && submethod == "stw")
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
@@ -617,6 +618,8 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::vector<double> eigenvalues_analytical(N, 0.0);
   eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
 
+  if (verbose > 1)
+  {
   // printer
   double maxerror = 0.0;
   for (int i = 0; i < eval.size(); i++)
@@ -638,73 +641,132 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   for (int i = 0; i < eval.size(); i++)
     maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[i]));
 
-  std::cout << "# Arpack elapsed time " << time_arpack << std::endl;
-  std::cout << "# Eigensolver elapsed time " << time_eigensolver << std::endl;
-  std::cout << "# Eigensolver with stopping criterion elapsed time " << time_eigensolver_new_stopper << std::endl;
+    std::cout << "# Arpack elapsed time " << time_arpack << std::endl;
+    std::cout << "# Eigensolver elapsed time " << time_eigensolver << std::endl;
+    std::cout << "# Eigensolver with stopping criterion elapsed time " << time_eigensolver_new_stopper << std::endl;
 
-  std::cout << "# N "              << std::setw(5) << std::setfill(' ') <<
-              "M "             << std::setw(10) <<
-              "TOL "           << std::setw(15) <<
-              "ESARERROR "     << std::setw(20) <<
-              "ESSTARERROR "   << std::setw(15) <<
-              "ARPERROR "      << std::setw(20) <<
-              "ESANERROR "     << std::setw(20) <<
-              "ESSTANERROR "   << std::setw(15) <<
-              "TIMERATIO "     << std::setw(20) <<
-              "TIMEWSTOPRATIO "<< std::setw(15) <<
-              "ARPACKITER "   <<
-              std::endl;
+    std::cout << "# N "              << std::setw(5) << std::setfill(' ') <<
+                "M "             << std::setw(10) <<
+                "TOL "           << std::setw(15) <<
+                "ESARERROR "     << std::setw(20) <<
+                "ESSTARERROR "   << std::setw(15) <<
+                "ARPERROR "      << std::setw(20) <<
+                "ESANERROR "     << std::setw(20) <<
+                "ESSTANERROR "   << std::setw(15) <<
+                "TIMERATIO "     << std::setw(20) <<
+                "TIMEWSTOPRATIO "<< std::setw(15) <<
+                "ARPACKITER "   <<
+                std::endl;
 
-  std::cout << "# " << n << "   "
-            << m << "   "
-            << tol << "    "
-            << std::scientific
-            << std::showpoint
-            << std::setprecision(6)
-            << maxerror << "      "
-            << maxerror5 << "     "
-            << maxerror2 << "      "
-            << maxerror3 << "      "
-            << maxerror4 << "      "
-            << time_eigensolver / time_arpack << "      "
-            << time_eigensolver_new_stopper / time_arpack << "       "
-            << arpackIterations << " \\\\"
-            << std::endl;
+    std::cout << "# " << n << "   "
+              << m << "   "
+              << tol << "    "
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
+              << maxerror << "      "
+              << maxerror5 << "     "
+              << maxerror2 << "      "
+              << maxerror3 << "      "
+              << maxerror4 << "      "
+              << time_eigensolver / time_arpack << "      "
+              << time_eigensolver_new_stopper / time_arpack << "       "
+              << arpackIterations << " \\\\"
+              << std::endl;
+  }
 
-  std::cout << "## " << "EIGENSOLVER"
-                                           << " " << "STOPCRITERION"
-                                           << " " << " ANALYTICAL"
-                                           << " " << " ARP-SMALL-TOL"
-                                           << " " << " ARPACK-TOL"
-                                           << " " << " ES-AN ERROR"
-                                           << " " << " ES-AR ERROR"
-                                           << " " << " ESS-AN ERROR"
-                                           << " " << " ESS-AR ERROR"
-                                           << std::endl;
-   for (int i = 0; i < eval.size(); i++)
-     std::cout << std::setw(2) << std::setfill('0') << i
-               << " "
-               << std::scientific
-               << std::showpoint
-               << std::setprecision(6)
-               << eval[i]
-               << " "
-               << evalstop[i]
-               << " "
-               << eigenvalues_analytical[i]
-               << " "
-               << eigenvalues_arpack[i]
-               << " "
-               << eigenvalues_arpack2[i]
-               << " "
-               << std::abs(eval[i] - eigenvalues_analytical[i])
-               << " "
-               << std::abs(eval[i] - eigenvalues_arpack[i])
-               << " "
-               << std::abs(evalstop[i] - eigenvalues_analytical[i])
-               << " "
-               << std::abs(evalstop[i] - eigenvalues_arpack[i])
-               << std::endl;
+  if (submethod == "ftw")
+  {
+    std::cout << "## " << "FTWORTH"
+                                             << " " << " ANALYTICAL"
+                                             << " " << " ARP-SMALL-TOL"
+                                             << " " << " ARPACK-TOL"
+                                             << " " << " ES-AN ERROR"
+                                             << " " << " ES-AR ERROR"
+                                             << std::endl;
+    for (int i = 0; i < eval.size(); i++)
+      std::cout << std::setw(2) << std::setfill('0') << i
+                << " "
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << eval[i]
+                << " "
+                << eigenvalues_analytical[i]
+                << " "
+                << eigenvalues_arpack[i]
+                << " "
+                << eigenvalues_arpack2[i]
+                << " "
+                << std::abs(eval[i] - eigenvalues_analytical[i])
+                << " "
+                << std::abs(eval[i] - eigenvalues_arpack[i])
+                << std::endl;
+
+  }
+  else if(submethod == "stw")
+  {
+    std::cout << "## " << " " << "STEWART"
+                                             << " " << " ANALYTICAL"
+                                             << " " << " ARP-SMALL-TOL"
+                                             << " " << " ARPACK-TOL"
+                                             << " " << " ESS-AN ERROR"
+                                             << " " << " ESS-AR ERROR"
+                                             << std::endl;
+    for (int i = 0; i < eval.size(); i++)
+      std::cout << std::setw(2) << std::setfill('0') << i
+                << " "
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << evalstop[i]
+                << " "
+                << eigenvalues_analytical[i]
+                << " "
+                << eigenvalues_arpack[i]
+                << " "
+                << eigenvalues_arpack2[i]
+                << " "
+                << std::abs(evalstop[i] - eigenvalues_analytical[i])
+                << " "
+                << std::abs(evalstop[i] - eigenvalues_arpack[i])
+                << std::endl;
+
+  }
+  //std::cout << "## " << "EIGENSOLVER"
+                                           //<< " " << "STOPCRITERION"
+                                           //<< " " << " ANALYTICAL"
+                                           //<< " " << " ARP-SMALL-TOL"
+                                           //<< " " << " ARPACK-TOL"
+                                           //<< " " << " ES-AN ERROR"
+                                           //<< " " << " ES-AR ERROR"
+                                           //<< " " << " ESS-AN ERROR"
+                                           //<< " " << " ESS-AR ERROR"
+                                           //<< std::endl;
+   //for (int i = 0; i < eval.size(); i++)
+     //std::cout << std::setw(2) << std::setfill('0') << i
+               //<< " "
+               //<< std::scientific
+               //<< std::showpoint
+               //<< std::setprecision(6)
+               //<< eval[i]
+               //<< " "
+               //<< evalstop[i]
+               //<< " "
+               //<< eigenvalues_analytical[i]
+               //<< " "
+               //<< eigenvalues_arpack[i]
+               //<< " "
+               //<< eigenvalues_arpack2[i]
+               //<< " "
+               //<< std::abs(eval[i] - eigenvalues_analytical[i])
+               //<< " "
+               //<< std::abs(eval[i] - eigenvalues_arpack[i])
+               //<< " "
+               //<< std::abs(evalstop[i] - eigenvalues_analytical[i])
+               //<< " "
+               //<< std::abs(evalstop[i] - eigenvalues_arpack[i])
+               //<< std::endl;
 
   //std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
                                                                  //{
