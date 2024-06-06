@@ -1,50 +1,41 @@
 #!/usr/bin/env python3
-
 import matplotlib.pyplot as plt
 import numpy as np
+from labellines import labelLine, labelLines
+plt.rcParams["figure.figsize"] = (9, 7)
 
 # Export data
-def plot(status, tol, nev, xlabel, ylabel):
+def plot_frame(ax, status, nev, xlabel, ylabel,submethod):
     match status:
         case 'tol':
-            iterlow = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_100', delimiter=' ',comments='#')
-            itermid = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_200', delimiter=' ',comments='#')
-            iterhigh = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_300', delimiter=' ',comments='#')
-            itergiant = np.loadtxt('../measurements/N_40k_m_32_'+tol+'_maxiter_10k', delimiter=' ',comments='#')
-
-            plt.plot(np.arange(nev),iterlow[:,6],label='iter 100, eigen',marker='o')
-            plt.plot(np.arange(nev),iterlow[:,8],label='iter 100, stewart',marker='o')
-            plt.plot(np.arange(nev),iterlow[:,6],label='iter 200, eigen',marker='o')
-            plt.plot(np.arange(nev),iterlow[:,8],label='iter 200, stewart',marker='o')
-            plt.plot(np.arange(nev),iterhigh[:,6],label='iter 300, eigen',marker='o')
-            plt.plot(np.arange(nev),iterhigh[:,8],label='iter 300, stewart',marker='o')
-            plt.plot(np.arange(nev),itergiant[:,6],label='iter 10k, eigen',marker='o')
-            plt.plot(np.arange(nev),itergiant[:,8],label='iter 10k, stewart',marker='o')
-
-            #plt.xscale('log')
-            plt.yscale('log')
+            filename = ""
+            for x in ['1','2','3','4','5']:
+                filename = 'load'+x
+                filename = np.loadtxt('../measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_2e-'+x+'_overlap_3_method_std_submethod_'+submethod, delimiter=' ',comments='#')
+                ax.semilogy(np.arange(nev),filename[:,5],label='2e-'+x,marker='')
 
             # Create legend
-            plt.xlabel(xlabel)
-            plt.ylabel(ylabel)
-            plt.title('Error in eigenvalues: N:40K, m:32, tol: 1e-3')
-            plt.legend(loc='lower right')
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.set_ylim(10e-18,10e-1)
+            ax.set_title('n:40000, m:32, shift: 1e-3, overlap: 3, method: '+submethod)
+            #ax.legend(loc='upper left')
+            ax.set_aspect('auto','box')
+            labelLines(ax.get_lines(),align=False,zorder=6.5)
 
-            # Save plot
-            plt.savefig('img/'+tol+'.pdf')
-
-            #Show plot
-            #plt.show()
-            
         case _:
             return "Try again!"
 
 def main():
-    tol = ['tol_1e-1', 'tol_1e-2'] #, 'tol_1e-3']
     nev = 32
-    for x in tol:
-        plot('tol', x, nev, 'Eigenvalues', 'Error in eigenvalues')
-        plt.clf()
+    fig, (ax1, ax2) = plt.subplots(2, 1, sharex=False)
+    plot_frame(ax1, 'tol', nev, 'Eigenvalues ranked smallest to largest', 'Error in eigenvalues','ftw')
+    plot_frame(ax2, 'tol', nev, 'Eigenvalues ranked smallest to largest', 'Error in eigenvalues', 'stw')
+
+    fig.suptitle('Accuracy of computed eigenvalues w.r.t. decreasing error tolerances')
+    fig.tight_layout()
+    fig.savefig('img/tol.pdf')
+#   plt.clf()
 
 if __name__ == "__main__":
         main()
