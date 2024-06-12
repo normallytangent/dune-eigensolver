@@ -512,6 +512,53 @@ void unshift_matrix(ISTLM &A, ISTLM &B, double shift, double reg)
   }
 }
 
+void printer(const std::vector<double> &self_eval, const std::vector<double> &compare_eval, const std::vector<double> &precise_compare_eval, const std::string method, const std::string submethod)
+{
+  if (method == "std")
+  {
+    std::cout << "## " << method << ": " << submethod << "    "
+                       << " ANALYTICAL"    << " "
+                       << " ARP-SMALL-TOL" << " "
+                       << " ES-ARP-SMALL"  << " "
+                       << " ES-AN ERROR"
+                       << std::endl;
+    for (int i = 0; i < self_eval.size(); i++)
+      std::cout << std::setw(2) << std::setfill('0') << i
+                << " "
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << self_eval[i] << " "
+                << compare_eval[i] << " "
+                << precise_compare_eval[i] << " "
+                << std::abs(self_eval[i] - precise_compare_eval[i]) << " "
+                << std::abs(self_eval[i] - compare_eval[i])
+                << std::endl;
+  }
+  else if (method == "gen")
+  {
+    std::cout << "## " << method << ": " << submethod << "    "
+                       << " ARP-SMALL-TOL" << " "
+                       << " ARPACK-TOL"    << " "
+                       << " ES-ARP-SMALL"   << " "
+                       << " ES-AR ERROR"
+                      << std::endl;
+    for (int i = 0; i < self_eval.size(); i++)
+      std::cout << std::setw(2) << std::setfill('0') << i
+                << " "
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << self_eval[i] << " "
+                << precise_compare_eval[i] << " "
+                << compare_eval[i] << " "
+                << std::abs(self_eval[i] - precise_compare_eval[i]) << " "
+                << std::abs(self_eval[i] - compare_eval[i])
+                << std::endl;
+
+  }
+}
+
 // this must be called sequentially
 int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
@@ -573,6 +620,10 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   for (auto &v : evec)
     v.resize(n);
 
+  // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
+  std::vector<double> eigenvalues_analytical(N, 0.0);
+  eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
+
   double time_eigensolver;
   if (method == "std" && submethod == "ftw")
   {
@@ -581,6 +632,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
     time_eigensolver = timer_eigensolver.elapsed();
     // unshift_matrix(A, shift);
+    printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
   else if (method == "gen" && submethod == "ftw")
   {
@@ -589,6 +641,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
     time_eigensolver = timer_eigensolver.elapsed();
     // unshift_matrix(A, B, shift, regularization);
+    printer(eval, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
   }
 
   // Add computation of the smallest eigenvalues with the new stopping criterion here
@@ -605,6 +658,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     // essIterations = StandardInverse(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
+    printer(evalstop, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
   else if (method == "gen" && submethod == "stw")
   {
@@ -612,11 +666,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     timer_eigensolver.reset();
     GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver.elapsed();
+    printer(evalstop, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
   }
 
-  // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
-  std::vector<double> eigenvalues_analytical(N, 0.0);
-  eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
 
   if (verbose > 1)
   {
@@ -675,98 +727,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
               << std::endl;
   }
 
-  if (submethod == "ftw")
-  {
-    std::cout << "## " << "FTWORTH"
-                                             << " " << " ANALYTICAL"
-                                             << " " << " ARP-SMALL-TOL"
-                                             << " " << " ARPACK-TOL"
-                                             << " " << " ES-AN ERROR"
-                                             << " " << " ES-AR ERROR"
-                                             << std::endl;
-    for (int i = 0; i < eval.size(); i++)
-      std::cout << std::setw(2) << std::setfill('0') << i
-                << " "
-                << std::scientific
-                << std::showpoint
-                << std::setprecision(6)
-                << eval[i]
-                << " "
-                << eigenvalues_analytical[i]
-                << " "
-                << eigenvalues_arpack[i]
-                << " "
-                << eigenvalues_arpack2[i]
-                << " "
-                << std::abs(eval[i] - eigenvalues_analytical[i])
-                << " "
-                << std::abs(eval[i] - eigenvalues_arpack[i])
-                << std::endl;
-
-  }
-  else if(submethod == "stw")
-  {
-    std::cout << "## " << " " << "STEWART"
-                                             << " " << " ANALYTICAL"
-                                             << " " << " ARP-SMALL-TOL"
-                                             << " " << " ARPACK-TOL"
-                                             << " " << " ESS-AN ERROR"
-                                             << " " << " ESS-AR ERROR"
-                                             << std::endl;
-    for (int i = 0; i < eval.size(); i++)
-      std::cout << std::setw(2) << std::setfill('0') << i
-                << " "
-                << std::scientific
-                << std::showpoint
-                << std::setprecision(6)
-                << evalstop[i]
-                << " "
-                << eigenvalues_analytical[i]
-                << " "
-                << eigenvalues_arpack[i]
-                << " "
-                << eigenvalues_arpack2[i]
-                << " "
-                << std::abs(evalstop[i] - eigenvalues_analytical[i])
-                << " "
-                << std::abs(evalstop[i] - eigenvalues_arpack[i])
-                << std::endl;
-
-  }
-  //std::cout << "## " << "EIGENSOLVER"
-                                           //<< " " << "STOPCRITERION"
-                                           //<< " " << " ANALYTICAL"
-                                           //<< " " << " ARP-SMALL-TOL"
-                                           //<< " " << " ARPACK-TOL"
-                                           //<< " " << " ES-AN ERROR"
-                                           //<< " " << " ES-AR ERROR"
-                                           //<< " " << " ESS-AN ERROR"
-                                           //<< " " << " ESS-AR ERROR"
-                                           //<< std::endl;
-   //for (int i = 0; i < eval.size(); i++)
-     //std::cout << std::setw(2) << std::setfill('0') << i
-               //<< " "
-               //<< std::scientific
-               //<< std::showpoint
-               //<< std::setprecision(6)
-               //<< eval[i]
-               //<< " "
-               //<< evalstop[i]
-               //<< " "
-               //<< eigenvalues_analytical[i]
-               //<< " "
-               //<< eigenvalues_arpack[i]
-               //<< " "
-               //<< eigenvalues_arpack2[i]
-               //<< " "
-               //<< std::abs(eval[i] - eigenvalues_analytical[i])
-               //<< " "
-               //<< std::abs(eval[i] - eigenvalues_arpack[i])
-               //<< " "
-               //<< std::abs(evalstop[i] - eigenvalues_analytical[i])
-               //<< " "
-               //<< std::abs(evalstop[i] - eigenvalues_arpack[i])
-               //<< std::endl;
 
   //std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
                                                                  //{
