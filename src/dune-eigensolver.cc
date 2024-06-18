@@ -567,10 +567,10 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  auto A = get_laplacian_dirichlet(N);
-  auto B = get_identity(N);
-  // auto A = get_laplacian_neumann(N);
-  // auto B = get_laplacian_B(N, overlap);
+  // auto A = get_laplacian_dirichlet(N);
+  // auto B = get_identity(N);
+  auto A = get_laplacian_neumann(N);
+  auto B = get_laplacian_B(N, overlap);
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
   //Dune::printmatrix(std::cout, A, "Unchanged", "");
@@ -597,14 +597,16 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   vec = 0.0;
   std::vector<ISTLV> eigenvectors(m, vec);
   ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
-  arpack.computeStdNonSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
+//  arpack.computeStdNonSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
+  arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
 
   // now compute eigenvalues with given tolerance in arpack
   std::vector<double> eigenvalues_arpack2(m, 0.0);
   Dune::Timer timer_arpack;
   timer_arpack.reset();
   ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack_tol(A);
-  arpack_tol.computeStdNonSymMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
+//  arpack_tol.computeStdNonSymMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
+  arpack_tol.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
   auto time_arpack = timer_arpack.elapsed();
   auto arpackIterations = arpack_tol.getIterationCount();
 
