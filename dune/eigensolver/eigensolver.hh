@@ -480,21 +480,32 @@ void SymmetricStewart(ISTLM &inA, double shift,
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
-    double partial_off = 0.0;
-    double partial_diag = 0.0;
-    // Stopping criterion
-    for (std::size_t i = 0; i < Q2.cols(); ++i)
-      for (std::size_t j = 0; j < Q1.cols(); ++j)
-        if ( i == j )
-          partial_diag += Q2T[i][j] * Q2T[i][j];
-        else
-          partial_off += Q2T[i][j] * Q2T[i][j];
+    if (stopperswitch == 0)
+    {
+      double partial_off = 0.0;
+      double partial_diag = 0.0;
+      // Stopping criterion
+      for (std::size_t i = 0; i < Q2.cols(); ++i)
+        for (std::size_t j = 0; j < Q1.cols(); ++j)
+          if ( i == j )
+            partial_diag += Q2T[i][j] * Q2T[i][j];
+          else
+            partial_off += Q2T[i][j] * Q2T[i][j];
 
-    if (verbose > 1)
-       std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
+      if (verbose > 1)
+         std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
 
-    if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
-      break;
+      if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+        break;
+    }
+    else if (stopperswitch == 1)
+    {
+      double eq_norm;
+      for (size_t i = 0; i < nev - 10; ++i)
+        eq_norm += D(i,i) * D(i,i);
+      if( iter > 1 && std::sqrt(eq_norm) < tol )
+        break;
+    }
 
     std::swap(Q1, Q2);
   }
