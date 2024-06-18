@@ -3,6 +3,7 @@
 **/build/
 **/debug/
 **/*.env
+**/measurements/*
 /env
 **/*.fdb_latexmk
 **/*.fls
