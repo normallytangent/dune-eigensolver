@@ -9,8 +9,13 @@ plt.rcParams['figure.constrained_layout.use'] = True
 def plot_frame(ax, status, nev, submethod, matrix):
     match status:
         case 'tol-std':
+            for y in map(str, np.arange(2,10,2)):
+                filename = '../measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_'+y+'e-2_overlap_3_method_std_submethod_'+submethod+'_'+matrix
+                dataset = np.loadtxt(filename, delimiter=' ',comments='#')
+                itr = find_iterations(filename)
+                ax.semilogy(np.arange(nev),dataset[:,-1],label=y+'e-2, itr: '+itr,marker='')
             for x in map(str, np.arange(1,5)):
-                for y in map(str, np.arange(1,5)):
+                for y in map(str, np.arange(1,2)):
                     filename = '../measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_'+y+'e-'+x+'_overlap_3_method_std_submethod_'+submethod+'_'+matrix
                     dataset = np.loadtxt(filename, delimiter=' ',comments='#')
                     itr = find_iterations(filename)
@@ -22,8 +27,13 @@ def plot_frame(ax, status, nev, submethod, matrix):
             labelLines(ax.get_lines(),align=False,zorder=6.5)
 
         case 'tol-gen':
+            for y in map(str, np.arange(2,10,2)):
+                filename = '../measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_'+y+'e-2_overlap_3_method_gen_submethod_'+submethod+'_'+matrix
+                dataset = np.loadtxt(filename, delimiter=' ',comments='#')
+                itr = find_iterations(filename)
+                ax.semilogy(np.arange(nev),dataset[:,-2],label=y+'e-2, itr: '+itr,marker='')
             for x in map(str, np.arange(1,5)):
-                for y in map(str, np.arange(1,5)):
+                for y in map(str, np.arange(1,2)):
                     filename = '../measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_'+y+'e-'+x+'_overlap_3_method_gen_submethod_'+submethod+'_'+matrix
                     dataset = np.loadtxt(filename, delimiter=' ',comments='#')
                     itr = find_iterations(filename)
