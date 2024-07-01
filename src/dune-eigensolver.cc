@@ -497,21 +497,6 @@ void unshift_matrix(ISTLM &A, double shift)
   }
 }
 
-template <typename ISTLM>
-void unshift_matrix(ISTLM &A, ISTLM &B, double shift, double reg)
-{
-  if (shift != 0)
-    A.axpy(-shift,B);
-  if (reg != 0.0)
-  {
-    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-        if (row_iter.index() == col_iter.index())
-          for (int i = 0; i < ISTLM::block_type::rows; i++)
-            (*col_iter)[i][i] -= reg;
-  }
-}
-
 void printer(const std::vector<double> &self_eval, const std::vector<double> &compare_eval, const std::vector<double> &precise_compare_eval, const std::string method, const std::string submethod)
 {
   if (method == "std")
@@ -633,7 +618,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     timer_eigensolver.reset();
     StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
     time_eigensolver = timer_eigensolver.elapsed();
-    // unshift_matrix(A, shift);
     printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
   else if (method == "gen" && submethod == "ftw")
@@ -642,7 +626,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     timer_eigensolver.reset();
     GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
     time_eigensolver = timer_eigensolver.elapsed();
-    // unshift_matrix(A, B, shift, regularization);
     printer(eval, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
   }
 
@@ -657,7 +640,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver_new_stopper;
     timer_eigensolver_new_stopper.reset();
-    // essIterations = StandardInverse(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
     printer(evalstop, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
