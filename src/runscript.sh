@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# . runscript std stw dir
 
 method="$1"
 submethod="$2"
