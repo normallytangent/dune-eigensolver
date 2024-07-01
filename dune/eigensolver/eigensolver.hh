@@ -380,7 +380,8 @@ template <typename ISTLM, typename VEC>
 void SymmetricStewart(ISTLM &inA, double shift,
                         double tol, int maxiter, int nev,
                         std::vector<double> &eval, std::vector<VEC> &evec,
-                        int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
+                        std::vector<double> &analytical, int verbose = 0,
+                        unsigned int seed = 123, int stopperswitch=0)
 {
   ISTLM A(inA);
 
@@ -480,6 +481,9 @@ void SymmetricStewart(ISTLM &inA, double shift,
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
+  for (size_t i = 0; i < nev; ++i)
+    D(i,i) = D(i,i) - shift;
+
     if (stopperswitch == 0)
     {
       double partial_off = 0.0;
@@ -499,11 +503,12 @@ void SymmetricStewart(ISTLM &inA, double shift,
         break;
     }
     else if (stopperswitch == 1)
+    // analytical stopper switch based on the norm
     {
-      double eq_norm;
+      double eq_norm = 0.0;
       for (size_t i = 0; i < nev - 10; ++i)
-        eq_norm += D(i,i) * D(i,i);
-      if( iter > 1 && std::sqrt(eq_norm) < tol )
+        eq_norm += ( D(i,i) - analytical[i] ) * (D(i,i) - analytical[i] );
+      if( iter > 1 && std::sqrt(eq_norm) < tol)
         break;
     }
 
@@ -511,7 +516,7 @@ void SymmetricStewart(ISTLM &inA, double shift,
   }
 
   for (size_t i = 0; i < nev; ++i)
-    eval[i] = D(i,i) - shift;
+    eval[i] = D(i,i); //- shift;
 
   if (verbose > 1)
     show(eval);
@@ -537,7 +542,8 @@ template <typename ISTLM, typename VEC>
 void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
                         double reg, double tol, int maxiter, int nev,
                         std::vector<double> &eval, std::vector<VEC> &evec,
-                        int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
+                        std::vector<double> &arpack, int verbose = 0,
+                        unsigned int seed = 123, int stopperswitch=0)
 {
   ISTLM A(inA);
 
@@ -656,27 +662,42 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
-    double partial_off = 0.0;
-    double partial_diag = 0.0;
-    // Stopping criterion
-    for (std::size_t i = 0; i < Q2.cols(); ++i)
-      for (std::size_t j = 0; j < Q1.cols(); ++j)
         if ( i == j )
           partial_diag += Q2T[i][j] * Q2T[i][j];
         else
           partial_off += Q2T[i][j] * Q2T[i][j];
+    for (size_t i = 0; i < nev; ++i)
+      D(i,i) = D(i,i) - shift;
 
-    if (verbose > 1)
-       std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
+    if (stopperswitch == 0)
+    {
+      double partial_off = 0.0;
+      double partial_diag = 0.0;
+      // Stopping criterion
+      for (std::size_t i = 0; i < Q2.cols() - 25; ++i)
+        for (std::size_t j = 0; j < Q1.cols() - 25; ++j)
 
-    if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
-      break;
+      if (verbose > 1)
+         std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
 
+      if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+        break;
+    }
+    else if (stopperswitch == 1)
+    // arpack stopper switch based on the norm
+    {
+      double eq_norm = 0.0;
+      for (size_t i = 0; i < nev - 10; ++i)
+        eq_norm += ( D(i,i) - arpack[i] ) * (D(i,i) - arpack[i] );
+      std::cout << eq_norm << std::endl;
+      if( iter > 1 && std::sqrt(eq_norm) < tol)
+        break;
+    }
     // std::swap(Q1, Q2);
   }
 
   for (size_t i = 0; i < nev; ++i)
-    eval[i] = D(i,i) - shift;
+    eval[i] = D(i,i);
 
   if (verbose > 1)
     show(eval);

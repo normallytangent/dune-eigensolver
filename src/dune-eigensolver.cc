@@ -640,7 +640,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver_new_stopper;
     timer_eigensolver_new_stopper.reset();
-    SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
+    SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, eigenvalues_analytical, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
     printer(evalstop, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
@@ -648,7 +648,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     Dune::Timer timer_eigensolver;
     timer_eigensolver.reset();
-    GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, verbose, seed, stopperswitch);
+    GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, eigenvalues_arpack2, verbose, seed, stopperswitch);
     time_eigensolver_new_stopper = timer_eigensolver.elapsed();
     printer(evalstop, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
   }
