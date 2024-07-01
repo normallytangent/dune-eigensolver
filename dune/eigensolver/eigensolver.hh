@@ -489,8 +489,8 @@ void SymmetricStewart(ISTLM &inA, double shift,
       double partial_off = 0.0;
       double partial_diag = 0.0;
       // Stopping criterion
-      for (std::size_t i = 0; i < Q2.cols(); ++i)
-        for (std::size_t j = 0; j < Q1.cols(); ++j)
+      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.3; ++i)
+        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.3; ++j)
           (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
 
       if (verbose > 1)
@@ -667,8 +667,8 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
       double partial_off = 0.0;
       double partial_diag = 0.0;
       // Stopping criterion
-      for (std::size_t i = 0; i < Q2.cols() - 25; ++i)
-        for (std::size_t j = 0; j < Q1.cols() - 25; ++j)
+      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.3; ++i)
+        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.3; ++j)
           (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
 
       if (verbose > 1)

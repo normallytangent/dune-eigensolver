@@ -552,10 +552,14 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  // auto A = get_laplacian_dirichlet(N);
-  // auto B = get_identity(N);
-  auto A = get_laplacian_neumann(N);
-  auto B = get_laplacian_B(N, overlap);
+  std::string method = ptree.get<std::string>("ev.method");
+  auto A = get_laplacian_dirichlet(N);
+  auto B = get_identity(N);
+  if (method == "gen")
+  {
+    A = get_laplacian_neumann(N);
+    B = get_laplacian_B(N, overlap);
+  }
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
   //Dune::printmatrix(std::cout, A, "Unchanged", "");
@@ -571,7 +575,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   double tol = ptree.get<double>("ev.tol");
   int verbose = ptree.get<int>("ev.verbose");
   unsigned int seed = ptree.get<unsigned int>("ev.seed");
-  std::string method = ptree.get<std::string>("ev.method");
   std::string submethod = ptree.get<std::string>("ev.submethod");
   int stopperswitch = ptree.get<int>("ev.stop");
 
