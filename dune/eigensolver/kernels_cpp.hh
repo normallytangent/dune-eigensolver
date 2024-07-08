@@ -617,11 +617,10 @@ void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const MV &Se)
   auto pin2 = &(Se(0, 0));
   auto pout = &(Qout(0, 0));
 
-  for (int j = 0; j < m; j++)
+  for (int j = 0; j < m; ++j)
   {
-    for (auto row_iter = 0; row_iter < m; ++row_iter)
+    for (auto i = 0; i < m; ++i)
     {
-      auto i = row_iter;
       pout[i] = 0.0;
       for (auto col_iter = 0; col_iter < m; ++col_iter)
         pout[i] += pin1[col_iter] * pin2[col_iter];
