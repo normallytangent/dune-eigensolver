@@ -26,12 +26,14 @@ fi
 make dune-eigensolver
 
 EXP="1 2 3 4"
-SIG="5 6 7 8 9"
+SIG="1 2"
 for val in $EXP; do
   for x in $SIG; do
     sed -i "" "s/^tol.*/tol = "$x"e-"$val"/" $FILE
     echo ""$x"e-"$val" $1 $2 $3"
-    ./dune-eigensolver &> $SRCPATH/measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_"$x"e-"$val"_overlap_3_method_"$1"_submethod_"$2"_"$3"
+    LOOPPATH=$SRCPATH/measurements/N_40k_m_32_maxiter_4k_shift_1e-3_tol_"$x"e-"$val"_overlap_3_method_"$1"_submethod_"$2"_"$3"
+    [ -f $LOOPPATH ] && rm -f $LOOPPATH
+    ./dune-eigensolver &> $LOOPPATH
   done
 done
 cd -

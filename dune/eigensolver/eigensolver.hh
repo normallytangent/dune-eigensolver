@@ -667,14 +667,14 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
       double partial_off = 0.0;
       double partial_diag = 0.0;
       // Stopping criterion
-      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.3; ++i)
-        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.3; ++j)
+      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
+        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
           (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
 
       if (verbose > 1)
          std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
 
-      if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+      if ( iter > 1 && partial_off < tol * partial_diag)
         break;
     }
     else if (stopperswitch == 1)
