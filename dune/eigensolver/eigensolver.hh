@@ -545,7 +545,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   // Iteration vectors
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
-  MultiVector<double, b> Se{m, m};
+ //  MultiVector<double, b> Se{m, m};
 
   // Initialize with random numbers
   std::mt19937 urbg{seed};
@@ -553,7 +553,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
     for (std::size_t i = 0; i < Q1.rows(); ++i)
       for (std::size_t j = 0; j < b; ++j)
-        Q2(i, bj + j) = generator(urbg);
+        Q1(i, bj + j) = generator(urbg);
 
   // Apply shift; overwrites input matrix A
   if (shift != 0.0)
@@ -575,6 +575,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
 
   //Initialize Raleigh coefficients
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
+  B_orthonormalize_blocked(B, Q1);
 
   Eigen::MatrixXd S, D, E(Q2.cols(), Q1.cols());
 
@@ -592,9 +593,9 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     matmul_inverse_tallskinny_avx2_b8(Q2, F, Q1);
     B_orthonormalize_avx2_b8(B, Q2);
 #else
-    matmul_sparse_tallskinny_blocked(Q1, B, Q2);
+    // ADD Call to matrix matrix multiplication that takes A^-1 and B
     matmul_inverse_tallskinny_blocked(Q2, F, Q1);
-    B_orthonormalize_blocked(B, Q2);
+    B_orthonormalize_blocked(B,Q2);
 #endif
 
   iter += 1;
@@ -606,7 +607,8 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     matmul_sparse_tallskinny_avx2_b8(Q1, A, Q2); // Q2 = A * Q1
     // dot_products_all_blocked(Q2T, Q2, Q1); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 #else
-    matmul_sparse_tallskinny_blocked(Q1, A, Q2); // Q2 = A * Q1
+    matmul_sparse_tallskinny_blocked(Q1, A, Q2); // Q1 = A * Q2
+    //matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
     dot_products_all_blocked(Q2T, Q2, Q1); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 #endif
 
@@ -628,13 +630,17 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     S = es.pseudoEigenvectors();
     time_eigendecomposition = timer_eigendecomposition.elapsed();
 
+    MultiVector<double, b> Se{m, m};
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
         Se(i,j) = S(i,j);
 
     Dune::Timer timer_matmul_dense;
-    matmul_tallskinny_dense_naive(Q1, Q1, Se); // Q2 = Q2 * Se;
+    matmul_tallskinny_dense_naive(Q1, Q2, Se); // Q2 = Q2 * Se;
     time_matmul_dense = timer_matmul_dense.elapsed();
+
+    //matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q1 = A * Q2
+    //dot_products_all_blocked(Q2T, Q1, Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 
     if (verbose > 1)
     {
@@ -644,39 +650,23 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
       show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
-    for (size_t i = 0; i < nev; ++i)
-      D(i,i) = D(i,i) - shift;
+    double partial_off = 0.0;
+    double partial_diag = 0.0;
+    // Stopping criterion
+    for (std::size_t i = 0; i < (size_t)Q2.cols(); ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols(); ++j)
+        (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
 
-    if (stopperswitch == 0)
-    {
-      double partial_off = 0.0;
-      double partial_diag = 0.0;
-      // Stopping criterion
-      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
-        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
-          (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
+    if (verbose > 1)
+       std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
 
-      if (verbose > 1)
-         std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
-
-      if ( iter > 1 && partial_off < tol * partial_diag)
-        break;
-    }
-    else if (stopperswitch == 1)
-    // arpack stopper switch based on the norm
-    {
-      double eq_norm = 0.0;
-      for (size_t i = 0; i < nev - 10; ++i)
-        eq_norm += ( D(i,i) - arpack[i] ) * (D(i,i) - arpack[i] );
-      std::cout << eq_norm << std::endl;
-      if( iter > 1 && std::sqrt(eq_norm) < tol)
-        break;
-    }
+    if ( iter > 1 && partial_off < tol * partial_diag)
+      break;
     // std::swap(Q1, Q2);
   }
 
   for (size_t i = 0; i < nev; ++i)
-    eval[i] = D(i,i);
+    eval[i] = D(i,i) - shift;
 
   if (verbose > 1)
     show(eval);
