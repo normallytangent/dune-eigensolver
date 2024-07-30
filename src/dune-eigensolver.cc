@@ -444,6 +444,7 @@ std::vector<double> eigenvalues_laplace_dirichlet_2d(std::size_t N)
   for (std::size_t i = 0; i < N; ++i)
     for (std::size_t j = 0; j < N; ++j)
       ev[j * N + i] = 4.0 * (std::sin(0.5 * h * (i + 1) * M_PI) * std::sin(0.5 * h * (i + 1) * M_PI) + std::sin(0.5 * h * (j + 1) * M_PI) * std::sin(0.5 * h * (j + 1) * M_PI));
+  //std::sort(ev.begin(), ev.end(),std::greater{});
   std::sort(ev.begin(), ev.end());
   return ev;
 }
@@ -657,7 +658,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   }
 
 
-  if (verbose > 1)
+  if (verbose > 0)
   {
   // printer
   double maxerror = 0.0;
