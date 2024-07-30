@@ -401,7 +401,6 @@ void SymmetricStewart(ISTLM &inA, double shift,
   // Iteration vectors
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
-  MultiVector<double, b> Se{m, m};
 
   // Initialize with random numbers
   std::mt19937 urbg{seed};
@@ -409,7 +408,7 @@ void SymmetricStewart(ISTLM &inA, double shift,
   for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
     for (std::size_t i = 0; i < Q1.rows(); ++i)
       for (std::size_t j = 0; j < b; ++j)
-        Q2(i, bj + j) = generator(urbg);
+        Q1(i, bj + j) = generator(urbg);
 
   // Apply shift; overwrites input matrix A
   if (shift != 0.0)
@@ -427,23 +426,24 @@ void SymmetricStewart(ISTLM &inA, double shift,
   auto time_factorization = timer_factorization.elapsed();
 
   //Initialize Raleigh coefficients
-  std::vector<double> s1(m, 0.0), s2(m, 0.0);
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
+  //Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> Se;
 
   Eigen::MatrixXd S, D, B(Q2.cols(), Q1.cols());
-
-  // Orthonormalize
-  orthonormalize_blocked(Q2);
+  orthonormalize_blocked(Q1);
 
   double time_eigendecomposition;
   double time_matmul_dense;
   int iter = 0;
-  for(iter = 1; iter < maxiter; ++iter)
+  while( iter < maxiter )
   {
-    matmul_inverse_tallskinny_blocked(Q1, F, Q2);
-    orthonormalize_blocked(Q1);
-    matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
-    dot_products_all_blocked(Q2T,Q1,Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
+    //  Largest eigenvalues
+    //  matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+    //  orthonormalize_blocked(Q2);
+    matmul_inverse_tallskinny_blocked(Q2, F, Q1);
+    orthonormalize_blocked(Q2);
+    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
+    dot_products_all_blocked(Q2T, Q2, Q1);
 
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
@@ -451,9 +451,10 @@ void SymmetricStewart(ISTLM &inA, double shift,
 
     if (verbose > 1)
     {
-      std::cout << "BEFORE EIGEN" << std::endl;
-      std::cout << B << std::endl << std::endl;
-      show(&(Q2(0,0)), Q2.rows(),Q2.cols());
+      std::cout << "BEFORE EIGEN" << "\n";
+      std::cout << B << "\n\n";
+      //show(&(Q1(0,0)), Q1.rows(),Q1.cols());
+      //show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
     Dune::Timer timer_eigendecomposition;
@@ -462,58 +463,42 @@ void SymmetricStewart(ISTLM &inA, double shift,
     S = es.pseudoEigenvectors();
     time_eigendecomposition = timer_eigendecomposition.elapsed();
 
-    for (size_t i = 0; i < Q2.cols(); ++i)
-      for (size_t j = 0; j < Q1.cols(); ++j)
-        Q2T[i][j] = B(i,j);
-
+    MultiVector<double, b> Se{m, m};
     for (size_t i = 0; i < Q2.cols(); ++i)
       for (size_t j = 0; j < Q1.cols(); ++j)
         Se(i,j) = S(i,j);
 
     Dune::Timer timer_matmul_dense;
-    matmul_tallskinny_dense_naive(Q2, Q2, Se); // Q2 = Q2 * Se;
+    matmul_tallskinny_dense_naive(Q1, Q2, Se); // Q1 = Q2 * Se;
     time_matmul_dense = timer_matmul_dense.elapsed();
 
     if (verbose > 1)
     {
-      std::cout << "AFTER EIGEN" << std::endl;
-      std::cout << B << std::endl << std::endl;
-      show(&(Q2(0,0)), Q2.rows(),Q2.cols());
+      std::cout << "AFTER EIGEN" <<  "\n";
+      std::cout << "S:\n " << S << "\n\n";
+      std::cout << "D:\n " << D << "\n\n";
+      //show(&(Q1(0,0)), Q1.rows(),Q1.cols());
+      //show(&(Q2(0,0)), Q2.rows(),Q2.cols());
     }
 
-  for (size_t i = 0; i < nev; ++i)
-    D(i,i) = D(i,i) - shift;
+    double partial_off = 0.0;
+    double partial_diag = 0.0;
+    // Stopping criterion
+    for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+        (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
 
-    if (stopperswitch == 0)
-    {
-      double partial_off = 0.0;
-      double partial_diag = 0.0;
-      // Stopping criterion
-      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.3; ++i)
-        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.3; ++j)
-          (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
+    if (verbose > 1)
+       std::cout << "iter: " << iter << "; norm_off: "<< partial_off << "; norm_diag: " << partial_diag << "\n";
 
-      if (verbose > 1)
-         std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
+    if ( iter > 0 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+      break;
 
-      if ( iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
-        break;
-    }
-    else if (stopperswitch == 1)
-    // analytical stopper switch based on the norm
-    {
-      double eq_norm = 0.0;
-      for (size_t i = 0; i < nev - 10; ++i)
-        eq_norm += ( D(i,i) - analytical[i] ) * (D(i,i) - analytical[i] );
-      if( iter > 1 && std::sqrt(eq_norm) < tol)
-        break;
-    }
-
-    std::swap(Q1, Q2);
+    iter += 1;
   }
 
   for (size_t i = 0; i < nev; ++i)
-    eval[i] = D(i,i); //- shift;
+    eval[i] = D(i,i) - shift;
 
   if (verbose > 1)
     show(eval);
@@ -532,7 +517,7 @@ void SymmetricStewart(ISTLM &inA, double shift,
               << " time_eigendecomposition=" << time_eigendecomposition
               << " time_matmul_dense=" << time_matmul_dense
               << " iterations=" << iter
-              << std::endl;
+              << "\n";
 }
 
 template <typename ISTLM, typename VEC>
