@@ -548,6 +548,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   // Iteration vectors
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
+  MultiVector<double, b> Q3{n, m};
  //  MultiVector<double, b> Se{m, m};
 
   // Initialize with random numbers
@@ -574,11 +575,13 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   // Compute factorization of matrix
   Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
+  UMFPackFactorizedMatrix<ISTLM> G(B, std::max(0, verbose - 1));
   auto time_factorization = timer_factorization.elapsed();
 
   //Initialize Raleigh coefficients
   std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
-  B_orthonormalize_blocked(B, Q1);
+  // B_orthonormalize_blocked(A, Q1);
+  orthonormalize_blocked(Q1);
 
   Eigen::MatrixXd S, D, E(Q2.cols(), Q1.cols());
 
@@ -597,8 +600,12 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     B_orthonormalize_avx2_b8(B, Q2);
 #else
     // ADD Call to matrix matrix multiplication that takes A^-1 and B
-    matmul_inverse_tallskinny_blocked(Q2, F, Q1);
-    B_orthonormalize_blocked(B,Q2);
+    // matmul_sparse_tallskinny_blocked(Q2, B, Q1);
+    ////B_orthonormalize_blocked(B, Q2);
+    //matmul_inverse_tallskinny_blocked(Q1, F, Q2);
+    matmul_sparse_tallskinny_blocked(Q3, B, Q1);
+    matmul_inverse_tallskinny_blocked(Q1, F, Q3);
+    orthonormalize_blocked(Q1);
 #endif
 
   iter += 1;
@@ -610,9 +617,12 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     matmul_sparse_tallskinny_avx2_b8(Q1, A, Q2); // Q2 = A * Q1
     // dot_products_all_blocked(Q2T, Q2, Q1); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 #else
-    matmul_sparse_tallskinny_blocked(Q1, A, Q2); // Q1 = A * Q2
-    //matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
-    dot_products_all_blocked(Q2T, Q2, Q1); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
+   // //matmul_sparse_tallskinny_blocked(Q1, A, Q2); // Q1 = A * Q2
+   // //matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
+   // dot_products_all_blocked(Q2T, Q2, Q1); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
+   matmul_sparse_tallskinny_blocked(Q3, A, Q1);
+   matmul_inverse_tallskinny_blocked(Q2, G, Q3);
+   dot_products_all_blocked(Q2T, Q1, Q2);
 #endif
 
   for (size_t i = 0; i < Q2.cols(); ++i)
@@ -642,11 +652,8 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
         Se(i,j) = S(i,j);
 
     Dune::Timer timer_matmul_dense;
-    matmul_tallskinny_dense_naive(Q1, Q2, Se); // Q2 = Q2 * Se;
+    matmul_tallskinny_dense_naive(Q2, Q1, Se); // Q2 = Q2 * Se;
     time_matmul_dense = timer_matmul_dense.elapsed();
-
-    //matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q1 = A * Q2
-    //dot_products_all_blocked(Q2T, Q1, Q2); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
 
     if (verbose > 1)
     {
@@ -668,7 +675,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
 
     if ( iter > 1 && partial_off < tol * partial_diag)
       break;
-    // std::swap(Q1, Q2);
+    std::swap(Q1, Q2);
   }
 
   for (size_t i = 0; i < nev; ++i)
@@ -681,7 +688,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
 
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
-      evec[j][i] = Q2(i, j);
+      evec[j][i] = Q1(i, j);
 
   auto time = timer.elapsed();
   if (verbose > 0)
