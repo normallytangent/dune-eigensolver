@@ -461,6 +461,9 @@ void SymmetricStewart(ISTLM &inA, double shift,
     Eigen::EigenSolver<Eigen::MatrixXd> es(B); // Matrix decomposition of Q2T or B = S * D * S^T
     D = es.pseudoEigenvalueMatrix();
     S = es.pseudoEigenvectors();
+    // Eigen::RealSchur<Eigen::MatrixXd> schur(B);
+    // D = schur.matrixT();
+    // S = schur.matrixU();
     time_eigendecomposition = timer_eigendecomposition.elapsed();
 
     MultiVector<double, b> Se{m, m};
@@ -628,6 +631,9 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     Eigen::EigenSolver<Eigen::MatrixXd> es(E); // Matrix decomposition of Q2T or B = S * D * S^T
     D = es.pseudoEigenvalueMatrix();
     S = es.pseudoEigenvectors();
+    // Eigen::RealSchur<Eigen::MatrixXd> schur(E);
+    // D = schur.matrixT();
+    // S = schur.matrixU();
     time_eigendecomposition = timer_eigendecomposition.elapsed();
 
     MultiVector<double, b> Se{m, m};
