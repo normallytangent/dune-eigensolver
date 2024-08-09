@@ -575,7 +575,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   // Compute factorization of matrix
   Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
-  UMFPackFactorizedMatrix<ISTLM> G(B, std::max(0, verbose - 1));
+  // UMFPackFactorizedMatrix<ISTLM> G(B, std::max(0, verbose - 1));
   auto time_factorization = timer_factorization.elapsed();
 
   //Initialize Raleigh coefficients
@@ -620,8 +620,9 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
    // //matmul_sparse_tallskinny_blocked(Q1, A, Q2); // Q1 = A * Q2
    // //matmul_sparse_tallskinny_blocked(Q2, A, Q1); // Q2 = A * Q1
    // dot_products_all_blocked(Q2T, Q2, Q1); // Q2T = Q1^T * Q2 =  Q1^T * A * Q1
-   matmul_sparse_tallskinny_blocked(Q3, A, Q1);
-   matmul_inverse_tallskinny_blocked(Q2, G, Q3);
+   matmul_sparse_tallskinny_blocked(Q3, B, Q1);
+   matmul_inverse_tallskinny_blocked(Q2, F, Q3);
+  //  matmul_inverse_tallskinny_blocked(Q2, G, Q3);
    dot_products_all_blocked(Q2T, Q1, Q2);
 #endif
 
@@ -668,7 +669,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
     // Stopping criterion
     for (std::size_t i = 0; i < (size_t)Q2.cols(); ++i)
       for (std::size_t j = 0; j < (size_t)Q1.cols(); ++j)
-        (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
+        (i == j ? partial_diag : partial_off) += ((1/Q2T[i][j]) - shift) * ((1/Q2T[i][j]) - shift);
 
     if (verbose > 1)
        std::cout << iter << ": "<< partial_off << "; " << partial_diag << std::endl;
@@ -679,7 +680,7 @@ void GeneralizedSymmetricStewart(ISTLM &inA, const ISTLM &B, double shift,
   }
 
   for (size_t i = 0; i < nev; ++i)
-    eval[i] = D(i,i) - shift;
+    eval[i] = (1/D(i,i)) - shift;
 
   if (verbose > 1)
     show(eval);
