@@ -128,6 +128,19 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
       if (k > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
        break;
      }
+     else if (stopperswitch == 1)
+     {
+      // Stopping criterion
+      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
+        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+          (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
+
+      if (verbose > 1)
+         std::cout << "iter: " << k << "; norm_off: "<< partial_off << "; norm_diag: " << partial_diag << "\n";
+
+      if ( k > 0 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+        break;
+     }
      else if (stopperswitch == 2)
         // || Q1 * diag(D) - Q2 ||;
      {
@@ -149,7 +162,7 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
     std::swap(Q1, Q2);
   }
 
-  if (stopperswitch == 0 ){
+  if (stopperswitch == 0 || stopperswitch == 1 ){
     for (int j = 0; j < nev; ++j)
       eval[j] = s1[j] - shift;
 
@@ -503,10 +516,10 @@ void SymmetricStewart(ISTLM &inA, double shift,
   for (size_t i = 0; i < nev; ++i)
     eval[i] = D(i,i) - shift;
 
+  std::sort(eval.begin(),eval.end());
+
   if (verbose > 1)
     show(eval);
-
-  std::sort(eval.begin(),eval.end());
 
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
