@@ -16,8 +16,6 @@
 #include "kernels_neon.hh"
 #endif
 
-//#include "arpack_geneo_wrapper.hh"
-
 /**********************************
  *
  * Dune Eigensolver Package
@@ -203,31 +201,27 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
                         std::vector<double> &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
-  // copy matrix since we need to shift it
   ISTLM A(inA);
 
-  // types
   using block_type = typename ISTLM::block_type;
-
-  // set the compile-time known block sizes for convenience
   const int b = 8;
   const int br = block_type::rows; // = 1
   const int bc = block_type::cols; // = 1
   if (br != bc)
-    throw std::invalid_argument("GeneralizedInverse: blocks of input matrix must be square");
+    throw std::invalid_argument("GeneralizedInverse: blocks of input matrix must be square!");
 
-  // measure time
+  // Measure total time
   Dune::Timer timer;
 
-  // set the other sizes
   const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible  multiple of the blocksize
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible multiple of the blocksize
 
-  // allocate the two sets of vectors to iterate upon
+  // Iteration vectors
   MultiVector<double, b> Q1{n, m};
   MultiVector<double, b> Q2{n, m};
+  MultiVector<double, b> Q3{n, m};
 
-  // initialize with random numbers
+  // Initialize with random numbers
   std::mt19937 urbg{seed};
   std::normal_distribution<double> generator{0.0, 1.0};
   for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
@@ -235,12 +229,10 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
       for (std::size_t j = 0; j < b; ++j)
         Q1(i, bj + j) = generator(urbg);
 
-  // apply shift which means here A = A + shift*B; overwrites input matrix A
-  // it is assumed that pattern(A) is included in pattern(B)
+  // Apply shift; overwrites input matrix A
   if (shift != 0.0)
     A.axpy(shift, B);
 
-  // add regularization; overwrites input matrix A
   if (reg != 0.0)
   {
     for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
@@ -250,141 +242,68 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
             (*col_iter)[i][i] += reg;
   }
 
-  // compute factorization of matrix
+  // Compute factorization of matrix
   Dune::Timer timer_factorization;
   UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
   auto time_factorization = timer_factorization.elapsed();
 
-  // B-orthonormalize and initialize Raleigh coefficients
-  std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
-  std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(),0.0));
-#if defined(NEONINCLUDE)
-  B_orthonormalize_neon_b8(B, Q1);
-  matmul_sparse_tallskinny_neon_b8(Q2, A, Q1);
-  dot_products_diagonal_neon_b8(sA, Q2, Q1);
-#elif defined(VCINCLUDE)
-  B_orthonormalize_avx2_b8(B, Q1);
-  matmul_sparse_tallskinny_avx2_b8(Q2, A, Q1);
-  dot_products_diagonal_avx2_b8(sA, Q2, Q1);
-#else
-  double time_dot_product_all, time_dot_product_diagonal;
+  //Initialize Raleigh coefficients
+  std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(), 0.0));
+
   B_orthonormalize_blocked(B, Q1);
-  matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-  Dune::Timer timer_dot_product_all;
-  dot_products_all_blocked(Q2T,Q2, Q1);
-  time_dot_product_all = timer_dot_product_all.elapsed();
-  Dune::Timer timer_dot_product_diagonal;
-  dot_products_diagonal_blocked(sA, Q2, Q1);
-  time_dot_product_diagonal = timer_dot_product_diagonal.elapsed();
-#endif
-  for (int i = 0; i < m; ++i)
-    ra2[i] = sA[i] - shift;
 
-
-  // do iterations
-  double initial_norm = 0.0;
+  double initial_partial_off = 0.0;
   int iter = 0;
-  double relerror;
-  while (iter < maxiter)
+  while ( iter < maxiter)
   {
-    // Q2 = B*Q1; Q1 = A^{-1}*Q2
-#if defined(NEONINCLUDE)
-    matmul_sparse_tallskinny_neon_b8(Q2, B, Q1);
-    matmul_inverse_tallskinny_neon_b8(Q1, F, Q2); // apply inverse to all columns
-    B_orthonormalize_neon_b8(B, Q1);
-#elif defined(VCINCLUDE)
-    matmul_sparse_tallskinny_avx2_b8(Q2, B, Q1);
-    matmul_inverse_tallskinny_avx2_b8(Q1, F, Q2); // apply inverse to all columns
-    B_orthonormalize_avx2_b8(B, Q1);
-#else
-    matmul_sparse_tallskinny_blocked(Q2, B, Q1);
-    matmul_inverse_tallskinny_blocked(Q1, F, Q2); // apply inverse to all columns
+    matmul_sparse_tallskinny_blocked(Q3, B, Q1);
+    matmul_inverse_tallskinny_blocked(Q1, F, Q3);
     B_orthonormalize_blocked(B, Q1);
-#endif
-    iter += 1;
-    // compute raleigh quotients
-#if defined(NEONINCLUDE)
-    matmul_sparse_tallskinny_neon_b8(Q2, A, Q1);
-    dot_products_diagonal_neon_b8(sA, Q2, Q1);
-#elif defined(VCINCLUDE)
-    matmul_sparse_tallskinny_avx2_b8(Q2, A, Q1);
-    dot_products_diagonal_avx2_b8(sA, Q2, Q1);
-#else
-    matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-    dot_products_all_blocked(Q2T,Q2, Q1);
-    dot_products_diagonal_blocked(sA, Q2, Q1);
-#endif
 
-    double frobenius_norm = 0.0;
+    matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+    dot_products_all_blocked(Q2T, Q2, Q1);
+
+    if (verbose > 1)
+    {
+      show(&(Q1(0,0)), Q1.rows(),Q1.cols());
+      show(&(Q2(0,0)), Q2.rows(),Q2.cols());
+      show(&(Q3(0,0)), Q3.rows(),Q3.cols());
+    }
+
+    // Stopping criterion
     double partial_off = 0.0;
     double partial_diag = 0.0;
-    if (stopperswitch == 0)
-    {
-      double norm = 0.0;
-      for (std::size_t i = 0; i < Q2.cols(); ++i)
-        for (std::size_t j = 0; j < Q1.cols(); ++j)
-          if (i == j)
-          {
-            partial_diag += Q2T[i][i] *Q2T[i][i];
-            //s1[i] = Q2T[i][i];
-          }
-          else
-            partial_off += Q2T[i][j]*Q2T[i][j];
+    for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+        (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += Q2T[i][j] * Q2T[i][j];
 
-      if (verbose > 2)
-        std::cout << iter << ": " << partial_off << "; " << partial_diag << std::endl;
+    if (verbose > 1)
+      std::cout << "iter: " << iter << " norm_off: "<< std::sqrt(partial_off) << " norm_diag: " << std::sqrt(partial_diag)
+      << " initial_norm_off: " << std::sqrt(initial_partial_off) << "\n";
 
-      if (iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
-        break;
-    }
-    else if (stopperswitch == 2)
-    {
-      for (int i = 0; i < m; ++i)
-        ra1[i] = sA[i] - shift;
-      if (verbose > 2)
-        show(ra1);
+    if ( iter > 0 && std::sqrt(partial_off) < tol * std::sqrt(initial_partial_off))
+      break;
 
-      relerror = 0.0;
-      for (int i = 0; i < m; ++i)
-        relerror = std::max(relerror, std::abs(ra1[i] - ra2[i]));
-      auto result = std::max_element(ra1.begin(), ra1.end());
-      relerror /= *result;
-      if (verbose > 2)
-        std::cout << "iter=" << iter << " relerror=" << relerror << std::endl;
-      std::swap(ra1, ra2);
-      if (iter>10 & relerror < tol)
-        break;
-    }
-
+  iter += 1;
   }
 
-  for (int i = 0; i < m; ++i)
-    ra1[i] = sA[i] - shift;
-  if (verbose > 2)
-    show(ra1);
+  for (size_t i = 0; i < nev; ++i)
+    eval[i] = (Q2T[i][i]) - shift;
 
-  if (eval.size() != nev)
-    eval.resize(nev);
-  for (int j = 0; j < nev; ++j)
-    eval[j] = ra1[j];
+  if (verbose > 1)
+    show(eval);
 
-  if (evec.size() != nev)
-    evec.resize(nev);
+  std::sort(eval.begin(),eval.end());
+
   for (int j = 0; j < nev; ++j)
-  {
-    if (evec[j].size() != n)
-      evec[j].resize(n);
     for (int i = 0; i < n; ++i)
       evec[j][i] = Q1(i, j);
-  }
 
   auto time = timer.elapsed();
   if (verbose > 0)
     std::cout << "# GeneralizedInverse: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
-              << " time_dot_product_all=" << time_dot_product_all
-              << " time_dot_product_diagonal=" << time_dot_product_diagonal
               << " iterations=" << iter
               << std::endl;
 }
