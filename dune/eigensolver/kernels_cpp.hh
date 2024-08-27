@@ -614,29 +614,25 @@ void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const MV &Se)
   std::size_t n = Qin.rows();
   std::size_t m = Qin.cols();
   // @bug
-  // auto pin1 = &(Qin(0, 0));
-  // auto pin2 = &(Se(0, 0));
-  // auto pout = &(Qout(0, 0));
-
-  // for (int j = 0; j < m; ++j)
-  // {
-  //   for (auto i = 0; i < m; ++i)
-  //   {
-  //     pout[i] = 0.0;
-  //     for (auto col_iter = 0; col_iter < m; ++col_iter)
-  //       pout[i] += pin1[col_iter] * pin2[col_iter];
-  //   }
-  //   pin1 += n;
-  //   pin2 += m;
-  //   pout += n;
-  // }
+  auto pin1 = &(Qin(0, 0));
+  auto pin2 = &(Se(0, 0));
+  auto pout = &(Qout(0, 0));
 
   for (int i = 0; i < n; ++i)
   {
     for (int j = 0; j < m; ++j)
     {
-      for ( int k = 0; k < m; ++k)
-        Qout(i,j) += Qin(i,k)*Se(k,j);
+      // for ( int k = 0; k < m; ++k)
+      //   Qout(i,j) += Qin(i,k)*Se(k,j);
+      // Row-major
+      // pout[j + i*m] = 0.0;
+      // for (auto k = 0; k < m; ++k)
+      //   pout[j + i*m] += pin1[k + i*m] * pin2[j + k*m];
+
+      // Column-major order
+      pout[j*n + i] = 0.0;
+      for (int k = 0; k < m; ++k)
+        pout[j*n + i] += pin1[k*n + i] * pin2[j*m + k];
     }
   }
 }
