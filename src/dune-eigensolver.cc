@@ -35,7 +35,7 @@
 // eigensolver includes
 #include "../dune/eigensolver/eigensolver.hh"
 
-#include "../dune/eigensolver/arpack_geneo_wrapper.hh"
+#include "../dune/eigensolver/arpack_wrapper.hh"
 
 // global lock
 double global_value;     // result
@@ -580,30 +580,40 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int stopperswitch = ptree.get<int>("ev.stop");
 
   // first compute eigenvalues with arpack to great accuracy
-  std::vector<double> eigenvalues_arpack(m, 0.0);
+  std::vector<double> eigenvalues_arpack(m, 0.0), eigenvalues_arpack2(m, 0.0);
   using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
   ISTLV vec(n); // vec(A.N());
   vec = 0.0;
-  std::vector<ISTLV> eigenvectors(m, vec);
-  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
-//  arpack.computeStdNonSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
-  arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
+  std::vector<ISTLV> eigenvectors(m, vec), eigenvectors2(m ,vec);
+  ArpackEigensolver::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A, maxiter, verbose);
+  if (method == "std")
+  {
+    arpack.computeStdSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
+  }
+  else if (method == "gen")
+  {
+    arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
+  }
 
-  // now compute eigenvalues with given tolerance in arpack
-  std::vector<double> eigenvalues_arpack2(m, 0.0);
   Dune::Timer timer_arpack;
   timer_arpack.reset();
-  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack_tol(A);
-//  arpack_tol.computeStdNonSymMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
-  arpack_tol.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
+  if (method == "std")
+  {
+     arpack.computeStdSymMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
+  }
+  else if (method == "gen")
+  {
+    arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
+  }
   auto time_arpack = timer_arpack.elapsed();
-  auto arpackIterations = arpack_tol.getIterationCount();
+  auto arpackIterations = arpack.getIterationCount();
 
   // Then compute the smallest eigenvalue with ISTL's arpack wrapper
-  Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(A);
+  ISTLM  control_(A);
+  Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(control_.axpy(shift,B));
   double w = 0.0;
   arp.computeSymMinMagnitude(tol,vec,w);
-  std::cout << "# Smallest eigenvalue from Arpack: " << std::scientific << w << std::endl;
+  std::cout << "# Smallest eigenvalue from Arpack: " << std::scientific << w-shift << std::endl;
 
   // next compute eigenvalues with given tolerance in eigensolver
   std::vector<double> eval(m,0.0);
