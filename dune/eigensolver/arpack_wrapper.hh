@@ -666,18 +666,18 @@ namespace ArpackEigensolver
         iteration++;
 
         // check if we are satisfied
-        if (lambda[nev - 1] >= threshold || nev >= nrows)
+        if (lambda[nev - 1] >= threshold || nev >= x.size())
         {
           // we are happy or cannot increase
           finished = true;
-          // if (nev < x.size())
-          // {
-          // }
           break;
         }
 
         // ok, not satisfied; increase nev and provide an initial guess
-        nev = std::min((int)nrows, (int)(nev * 1.3));
+        nev = std::min((int)x.size(), (int)(nev * 1.3));
+      }
+      if (nev < x.size())
+      {
         lambda.resize(nev);
         x.resize(nev);
       }
