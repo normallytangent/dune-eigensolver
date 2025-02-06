@@ -616,6 +616,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
   double shift = ptree.get<double>("ev.shift");
   double regularization = ptree.get<double>("ev.regularization");
+  double accuracy = ptree.get<double>("ev.accuracy");
   double tol = ptree.get<double>("ev.tol");
   double threshold = ptree.get<double>("ev.threshold");
   int verbose = ptree.get<int>("ev.verbose");
@@ -624,6 +625,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   bool adapt = ptree.get<bool>("ev.adapt");
   bool symmetric = ptree.get<bool>("ev.symmetric");
   int stopperswitch = ptree.get<int>("ev.stop");
+
+  if (accuracy > 1)
+    throw std::invalid_argument("Number of accurate eigenvalues is more that requested!");
 
   // first compute eigenvalues with arpack to great accuracy
   std::vector<double> eigenvalues_arpack(m, 0.0), eigenvalues_arpack2(m, 0.0);
@@ -692,29 +696,29 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   if (method == "gen" && submethod == "stw" && adapt)
   {
     if (symmetric)
-      GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+      GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
     // else
-      // GeneralizedNonsymmetricStewart(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+      // GeneralizedNonsymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   }
   else if (method == "gen" && submethod == "stw" && !adapt)
   {
-    GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    GeneralizedSymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   }
   else if (method == "gen" && submethod == "ftw" && adapt)
   {
-    GeneralizedInverseAdaptive(A, B, shift, regularization, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+    GeneralizedInverseAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
   } 
   else if (method == "gen" && submethod == "ftw" && !adapt)
   {
-    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
+    GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, 2);
   } 
   else if (method == "std" && submethod == "stw")
   {
-    SymmetricStewart(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    SymmetricStewart(A, shift, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   }
   if (method == "std" && submethod == "ftw")
   {
-    StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    StandardInverse(A, shift, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   }
   auto time_eigensolver = timer_eigensolver.elapsed();
 

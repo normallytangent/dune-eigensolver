@@ -24,7 +24,7 @@
 /** \brief solve standard eigenvalue problem with shift invert to obtain
      smallest eigenvalues. Use the norm of the offdiagonal elements to stop.*/
 template <typename ISTLM, typename VEC>
-void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
+void StandardInverse(ISTLM &inA, double shift, double accuracy, double tol, int maxiter,
                                 int nev, std::vector<double> &eval, 
                                 std::vector<VEC> &evec, int verbose = 0,
                                 unsigned int seed = 123, int stopperswitch=0)
@@ -129,8 +129,8 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
      else if (stopperswitch == 1)
      {
       // Stopping criterion
-      for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
-        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+      for (std::size_t i = 0; i < (size_t)Q2.cols()*accuracy; ++i)
+        for (std::size_t j = 0; j < (size_t)Q1.cols()*accuracy; ++j)
           (i == j ? partial_diag : partial_off) += Q2T[i][j] * Q2T[i][j];
 
       if (verbose > 1)
@@ -197,7 +197,7 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
  */
 template <typename ISTLM, typename VEC>
 void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
-                        double reg, double tol, int maxiter, int nev,
+                        double reg, double accuracy, double tol, int maxiter, int nev,
                         VEC &eval, std::vector<VEC> &evec,
                         int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
@@ -289,8 +289,8 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
     // Stopping criterion
     double partial_off = 0.0;
     double partial_diag = 0.0;
-    for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
-      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+    for (std::size_t i = 0; i < (size_t)Q2.cols()*accuracy; ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols()*accuracy; ++j)
         (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += Q2T[i][j] * Q2T[i][j];
 
     if (verbose > 0)

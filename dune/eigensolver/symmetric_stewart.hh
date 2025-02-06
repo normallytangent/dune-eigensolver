@@ -5,7 +5,7 @@
 
 template <typename ISTLM, typename VEC>
 void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, double shift,
-                        double reg, double tol, double threshold, int maxiter, int &nev,
+                        double reg, double accuracy, double tol, double threshold, int maxiter, int &nev,
                         VEC &eval, std::vector<VEC> &evec, 
                         int verbose = 0, unsigned int seed = 123)
 {
@@ -129,8 +129,8 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
     
       // Stopping criterion
       double partial_off = 0.0, partial_diag = 0.0;
-      for (std::size_t i = 0; i < (size_t)Q1.cols()*0.75; ++i)
-        for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+      for (std::size_t i = 0; i < (size_t)Q1.cols()*accuracy; ++i)
+        for (std::size_t j = 0; j < (size_t)Q1.cols()*accuracy; ++j)
           (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += A_hat[i][j] * A_hat[i][j];
 
       if (verbose > 0)
@@ -202,7 +202,7 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
 
 template <typename ISTLM, typename VEC>
 void GeneralizedSymmetricStewart(const ISTLM &inA, const ISTLM &B, double shift,
-                        double reg, double tol, int maxiter, int nev,
+                        double reg, double accuracy, double tol, int maxiter, int nev,
                         VEC &eval, std::vector<VEC> &evec, 
                         int verbose = 0, unsigned int seed = 123, 
                         int stopperswitch=0)
@@ -336,8 +336,8 @@ void GeneralizedSymmetricStewart(const ISTLM &inA, const ISTLM &B, double shift,
     
     // Stopping criterion
     double partial_off = 0.0, partial_diag = 0.0;
-    for (std::size_t i = 0; i < (size_t)Q1.cols()*0.75; ++i)
-      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+    for (std::size_t i = 0; i < (size_t)Q1.cols()*accuracy; ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols()*accuracy; ++j)
         (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += A_hat[i][j] * A_hat[i][j];
 
     if (verbose > 0)
@@ -372,7 +372,7 @@ void GeneralizedSymmetricStewart(const ISTLM &inA, const ISTLM &B, double shift,
 }
 
 template <typename ISTLM, typename VEC>
-void SymmetricStewart(ISTLM &inA, double shift, double tol, int maxiter,
+void SymmetricStewart(ISTLM &inA, double shift, double accuracy, double tol, int maxiter,
                       int nev, VEC &eval, std::vector<VEC> &evec,
                       int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
@@ -493,8 +493,8 @@ void SymmetricStewart(ISTLM &inA, double shift, double tol, int maxiter,
     double partial_off = 0.0;
     double partial_diag = 0.0;
     // Stopping criterion
-    for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
-      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+    for (std::size_t i = 0; i < (size_t)Q2.cols()*accuracy; ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols()*accuracy; ++j)
         (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += A_hat[i][j] * A_hat[i][j];
 
     if (verbose > 0)

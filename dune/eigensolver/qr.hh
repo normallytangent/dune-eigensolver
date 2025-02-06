@@ -5,7 +5,7 @@
 
 template <typename ISTLM, typename VEC>
 void GeneralizedInverseAdaptive(const ISTLM &inA, const ISTLM &B, double shift,
-                        double reg, double tol, double threshold, int maxiter, int &nev,
+                        double reg, double accuracy, double tol, double threshold, int maxiter, int &nev,
                         VEC &eval, std::vector<VEC> &evec, 
                         int verbose = 0, unsigned int seed = 123)
 {
@@ -87,8 +87,8 @@ void GeneralizedInverseAdaptive(const ISTLM &inA, const ISTLM &B, double shift,
     dot_products_all_blocked(A_hat, Q1, Q3);
 
     double partial_off = 0.0, partial_diag = 0.0;
-    for (std::size_t i = 0; i < (size_t)Q1.cols()*0.75; ++i)
-      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
+    for (std::size_t i = 0; i < (size_t)Q1.cols()*accuracy; ++i)
+      for (std::size_t j = 0; j < (size_t)Q1.cols()*accuracy; ++j)
         (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += A_hat[i][j] * A_hat[i][j];
 
     if (verbose > 0)
