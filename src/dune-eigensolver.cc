@@ -612,11 +612,11 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::size_t bc = block_type::cols;
   std::size_t n = A.N() * br;
   std::cout << "\n# " << " n: " << n << " A.N(): " << A.N() << " br: " << br << '\n';
-  int m = ptree.get<int>("ev.m");
+  int m = ptree.get<int>("ev.M");
   int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
   double shift = ptree.get<double>("ev.shift");
   double regularization = ptree.get<double>("ev.regularization");
-  double accuracy = ptree.get<double>("ev.accuracy");
+  int accurate = ptree.get<int>("ev.accurate");
   double tol = ptree.get<double>("ev.tol");
   double threshold = ptree.get<double>("ev.threshold");
   int verbose = ptree.get<int>("ev.verbose");
@@ -626,8 +626,10 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   bool symmetric = ptree.get<bool>("ev.symmetric");
   int stopperswitch = ptree.get<int>("ev.stop");
 
-  if (accuracy > 1)
-    throw std::invalid_argument("Number of accurate eigenvalues is more that requested!");
+  // compile time check only :(
+  // if (accurate < 1 || 4 < accurate)
+  //   throw std::invalid_argument("Number of accurate eigenvalues is not in the requested range!");
+  double accuracy = (double)accurate/4.0;
 
   // first compute eigenvalues with arpack to great accuracy
   std::vector<double> eigenvalues_arpack(m, 0.0), eigenvalues_arpack2(m, 0.0);
@@ -744,6 +746,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
               << " M= " << m
               << " ACCURACY= " << accuracy
               << " TOL= " << tol
+              << " THRESHOLD= " << threshold
               << std::scientific
               << std::showpoint
               << std::setprecision(6)
