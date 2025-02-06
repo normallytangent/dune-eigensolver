@@ -176,8 +176,8 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
   nev = m;
 
 
-  if (verbose > 0)
-  show(eval);
+  if (verbose > 1)
+    show(eval);
 
   if (evec.size() != m) {
     evec.resize(m);

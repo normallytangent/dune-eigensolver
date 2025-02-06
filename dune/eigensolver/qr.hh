@@ -131,7 +131,7 @@ void GeneralizedInverseAdaptive(const ISTLM &inA, const ISTLM &B, double shift,
   for (size_t i = 0; i < m; ++i)
     eval[i] = A_hat[i][i] - shift;
 
-  if (verbose > 0)
+  if (verbose > 1)
   show(eval);
 
   if (evec.size() != m) {

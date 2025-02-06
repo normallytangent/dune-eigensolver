@@ -730,10 +730,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
-  // std::cout << "Arpack:\n";
-  // show(eigenvalues_arpack2);
-  // std::cout << "\nArpack small tol:\n";
-  // show(eigenvalues_arpack);
 
   // if (verbose > 0)
   // {
