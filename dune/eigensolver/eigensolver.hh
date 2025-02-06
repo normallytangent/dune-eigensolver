@@ -181,13 +181,13 @@ void StandardInverse(ISTLM &inA, double shift, double tol, int maxiter,
       evec[j][i] = Q1(i, j);
 
   auto time = timer.elapsed();
-  if (verbose > 0)
+  if (verbose > -1)
     std::cout << "# StandardInverse: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_dot_product_all=" << time_dot_product_all
               << " time_dot_product_diagonal=" << time_dot_product_diagonal
-              << " iterations=" << k
+              << " iterations=" << ++k
               << std::endl;
 }
 
@@ -316,171 +316,12 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
       evec[j][i] = Q1(i, j);
 
   auto time = timer.elapsed();
-  if (verbose > 0)
+  if (verbose > -1)
     std::cout << "# GeneralizedInverse: "
               << " time_total=" << time
               << " time_factorization=" << time_factorization
-              << " iterations=" << iter
+              << " iterations=" << ++iter
               << std::endl;
-}
-
-template <typename ISTLM, typename VEC>
-void SymmetricStewart(ISTLM &inA, double shift, double tol, int maxiter,
-                      int nev, VEC &eval, std::vector<VEC> &evec,
-                      int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
-{
-  ISTLM A(inA);
-
-  using block_type = typename ISTLM::block_type;
-  const int b = 8;
-  const int br = block_type::rows; // = 1
-  const int bc = block_type::cols; // = 1
-  if (br != bc)
-    throw std::invalid_argument("SymmetricStewart: blocks of input matrix must be square!");
-
-  // Measure total time
-  Dune::Timer timer;
-
-  const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible multiple of the blocksize
-
-  // Iteration vectors
-  MultiVector<double, b> Q1{n, m};
-  MultiVector<double, b> Q2{n, m};
-
-  // Initialize with random numbers
-  std::mt19937 urbg{seed};
-  std::normal_distribution<double> generator{0.0, 1.0};
-  for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
-    for (std::size_t i = 0; i < Q1.rows(); ++i)
-      for (std::size_t j = 0; j < b; ++j)
-        Q1(i, bj + j) = generator(urbg);
-
-  // Apply shift; overwrites input matrix A
-  if (shift != 0.0)
-  {
-    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-        if (row_iter.index() == col_iter.index())
-          for (int i = 0; i < br; i++)
-            (*col_iter)[i][i] += shift;
-  }
-
-  // Compute factorization of matrix
-  Dune::Timer timer_factorization;
-  UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
-  auto time_factorization = timer_factorization.elapsed();
-
-  //Initialize Raleigh coefficients
-  std::vector<VEC> A_hat (Q2.cols(), VEC (Q1.cols(), 0.0));
-  std::vector<VEC> M_hat (Q2.cols(), VEC (Q1.cols(), 0.0));
-
-
-  Eigen::MatrixXd D(Q2.cols(), Q1.cols());
-  Eigen::MatrixXd S(Q2.cols(), Q1.cols());
-  Eigen::MatrixXd B(Q2.cols(), Q1.cols());
-  Eigen::MatrixXd C(Q2.cols(), Q1.cols());
-
-#if defined (VCINCLUDE)
-  orthonormalize_avx2_b8(Q1);
-#else
-  orthonormalize_blocked(Q1);
-#endif
-
-  double eigentimer = 0;
-  double initial_partial_off = 0.0;
-  double time_eigendecomposition;
-  double time_matmul_dense;
-  int iter = 0;
-  while( iter < maxiter )
-  {
-#if defined (VCINCLUDE)
-    matmul_inverse_tallskinny_avx2_b8(Q2, F, Q1);
-    orthonormalize_avx2_b8(Q2);
-#else
-    matmul_inverse_tallskinny_blocked(Q2, F, Q1);
-    orthonormalize_blocked(Q2);
-#endif
-
-#if defined (VCINCLUDE)
-    matmul_sparse_tallskinny_avx2_b8(Q1, A, Q2);
-#else
-    matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-#endif
-    dot_products_all_blocked(A_hat, Q2, Q1);
-
-    for (size_t i = 0; i < Q2.cols(); ++i)
-      for (size_t j = 0; j < Q1.cols(); ++j)
-          B(i,j) = A_hat[i][j];
-
-    Dune::Timer timer_eigendecomposition;
-
-    // Matrix decomposition of Q2T or B = S * D * S^T
-    // Assumes a general standard eigenvalue problem
-    Eigen::EigenSolver<Eigen::MatrixXd> es(B);
-    if (es.info() != Eigen::Success)
-      abort();
-    D = es.pseudoEigenvalueMatrix();
-    S = es.pseudoEigenvectors();
-
-    time_eigendecomposition = timer_eigendecomposition.elapsed();
-    eigentimer += time_eigendecomposition;
-
-    Eigen::MatrixXd EQ1(Q1.rows(), Q1.cols());
-    Eigen::MatrixXd EQ2(Q1.rows(), Q1.cols());
-    for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
-      for (std::size_t i = 0; i < Q1.rows(); ++i)
-        for (std::size_t j = 0; j < b; ++j)
-          EQ2(i, bj + j) = Q2(i, bj+j);
-
-    Dune::Timer timer_matmul_dense;
-    // matmul_tallskinny_dense_blocked(Q1, Q2, S); // Q1 = Q2 * Se;
-    EQ1 = EQ2 * S;
-    time_matmul_dense = timer_matmul_dense.elapsed();
-
-    for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
-      for (std::size_t i = 0; i < Q1.rows(); ++i)
-        for (std::size_t j = 0; j < b; ++j)
-          Q1(i, bj + j) = EQ1(i, bj+j);
-
-    double partial_off = 0.0;
-    double partial_diag = 0.0;
-    // Stopping criterion
-    for (std::size_t i = 0; i < (size_t)Q2.cols()*0.75; ++i)
-      for (std::size_t j = 0; j < (size_t)Q1.cols()*0.75; ++j)
-        (i == j ? partial_diag : (iter == 0 ? initial_partial_off : partial_off)) += A_hat[i][j] * A_hat[i][j];
-
-    if (verbose > 0)
-      std::cout << "iter: " << iter << " norm_off: "<< std::sqrt(partial_off) << " norm_diag: " << std::sqrt(partial_diag)
-      << " initial_norm_off: " << std::sqrt(initial_partial_off) << "\n";
-
-    if ( iter > 0 && std::sqrt(partial_off) < tol * std::sqrt(initial_partial_off))
-      break;
-
-    iter += 1;
-  }
-
-  for (size_t i = 0; i < nev; ++i)
-    eval[i] = D(i,i) - shift;
-
-  std::sort(eval.begin(),eval.end());
-
-  if (verbose > 1)
-    show(eval);
-
-  for (int j = 0; j < nev; ++j)
-    for (int i = 0; i < n; ++i)
-      evec[j][i] = Q2(i, j);
-
-  auto time = timer.elapsed();
-  if (verbose > -1)
-    std::cout << "# SymmetricStewart: "
-              << " time_total=" << time
-              << " time_factorization=" << time_factorization
-              << " time_eigendecomposition=" << eigentimer
-              << " time_matmul_dense=" << time_matmul_dense
-              << " iterations=" << iter
-              << "\n";
 }
 
 #endif // Udune_eigensolver_HH
