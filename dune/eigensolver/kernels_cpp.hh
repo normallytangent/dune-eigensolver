@@ -649,7 +649,7 @@ double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
  *
  */
 template <typename MV>
-void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const MV &Se)
+void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const Eigen::MatrixXd &Se)
 {
   std::size_t n = Qin.rows();
   std::size_t m = Qin.cols();

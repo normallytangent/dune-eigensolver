@@ -160,7 +160,7 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
     }
     // Increase nev and provide an initial guess
     ithelper = m;
-    m = std::min((int)Q1.cols(), (int)(initial_nev + 8));
+    m = std::min((int)Q1.cols(), (int)(initial_nev + b));
     Q1.resize(m);
     Q3.resize(m);
 
@@ -191,6 +191,9 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
   auto time = timer.elapsed();
   if (verbose > -1)
     std::cout << "# GeneralizedSymmetricStewartAdaptive: "
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_eigendecomposition=" << eigentimer
@@ -363,6 +366,9 @@ void GeneralizedSymmetricStewart(const ISTLM &inA, const ISTLM &B, double shift,
   auto time = timer.elapsed();
   if (verbose > -1)
     std::cout << "# GeneralizedSymmetricStewart: "
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_eigendecomposition=" << eigentimer
@@ -522,6 +528,9 @@ void SymmetricStewart(ISTLM &inA, double shift, double accuracy, double tol, int
   auto time = timer.elapsed();
   if (verbose > -1)
     std::cout << "# SymmetricStewart: "
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_eigendecomposition=" << eigentimer

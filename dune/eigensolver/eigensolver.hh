@@ -183,6 +183,9 @@ void StandardInverse(ISTLM &inA, double shift, double accuracy, double tol, int 
   auto time = timer.elapsed();
   if (verbose > -1)
     std::cout << "# StandardInverse: "
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " time_dot_product_all=" << time_dot_product_all
@@ -318,6 +321,9 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
   auto time = timer.elapsed();
   if (verbose > -1)
     std::cout << "# GeneralizedInverse: "
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " iterations=" << ++iter

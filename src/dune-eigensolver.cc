@@ -206,9 +206,9 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> readMatrixFromMatlab(std::stri
 
   std::ifstream file(filename);
   auto nnz = std::count(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), '\n');
-  std::cout << "\n nnz: " << nnz;
+  std::cout << "\n# nnz: " << nnz;
   auto nny = n * 30;
-  std::cout << "\n nny: " << nny;
+  std::cout << "\n# nny: " << nny;
   file.seekg(0, std::ios_base::beg);
 
   using Mat = Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>>;
@@ -535,7 +535,7 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
 {
   if (method == "std")
   {
-    std::cout << "## " << method << ": " << submethod << "    "
+    std::cout << "\n## " << method << ": " << submethod << "    "
                        << " ANALYTICAL"    << " "
                        << " ARP-SMALL-TOL" << " "
                        << " ES-ARP-SMALL"  << " "
@@ -556,7 +556,7 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
   }
   else if (method == "gen")
   {
-    std::cout << "## " << method << ": " << submethod << "    "
+    std::cout << "\n## " << method << ": " << submethod << "    "
                        << " ARP-SMALL-TOL" << " "
                        << " ARPACK-TOL"    << " "
                        << " ES-ARP-SMALL"   << " "
@@ -582,7 +582,7 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
 int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
 {
-  std::cout << "# Smallest eigenvalues\n";
+  std::cout << "# Smallest eigenvalues \n";
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
@@ -600,7 +600,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // B = readMatrixFromMatlab("aharmonic_gevp_Bhat2_subdomain_1.txt", A.N());
   // A = readMatrixFromMatlab("aharmonic_gevp_coordpart_Ahat2_subdomain_0.txt");
   // B = readMatrixFromMatlab("aharmonic_gevp_coordpart_Bhat2_subdomain_0.txt", A.N());
-  std::cout << '\n' << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
+  // std::cout << "\n#" << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
 
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
@@ -611,7 +611,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::size_t br = block_type::rows;
   std::size_t bc = block_type::cols;
   std::size_t n = A.N() * br;
-  std::cout << "\n " << " n: " << n << " A.N(): " << A.N() << " br: " << br << '\n';
+  std::cout << "\n# " << " n: " << n << " A.N(): " << A.N() << " br: " << br << '\n';
   int m = ptree.get<int>("ev.m");
   int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
   double shift = ptree.get<double>("ev.shift");
@@ -672,7 +672,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   // double w = 0.0;
   // arp.computeSymMinMagnitude(tol,vec,w);
   // std::cout << "# Smallest eigenvalue from Arpack: " << std::scientific << w-shift << std::endl;
-  std::cout << std::scientific; //<< std::endl;
+  // std::cout << std::scientific<< std::endl;
 
   // next compute eigenvalues with given tolerance in eigensolver
   using VEC = std::vector<double>;
@@ -722,6 +722,38 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   }
   auto time_eigensolver = timer_eigensolver.elapsed();
 
+  if (verbose > -1)
+  {
+    // printer
+    double maxerror = 0.0;
+    for (int i = 0; i < eval.size(); i++)
+      maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
+
+    double maxerror2 = 0.0;
+    for (int i = 0; i < m; i++)
+      maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
+
+    double maxerror3 = 0.0;
+    for (int i = 0; i < m; ++i)
+      maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
+
+    std::cout << "\n# Arpack: time_total=" << time_arpack << " iterations=" << arpackIterations << std::endl;
+    std::cout << "\n# Eigensolver elapsed time " << time_eigensolver << std::endl;
+
+    std::cout << "\n# N= " << n 
+              << " M= " << m
+              << " ACCURACY= " << accuracy
+              << " TOL= " << tol
+              << std::scientific
+              << std::showpoint
+              << std::setprecision(6)
+              << " ESARERROR= " << maxerror3
+              << " ARPERROR= " << maxerror
+              << " ESANERROR= " << maxerror2 
+              << " TIMERATIO= " << time_eigensolver / time_arpack << " \\\\"
+              << std::endl;
+  }
+
   if ( method == "gen")
   {
     printer(eval, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
@@ -730,46 +762,6 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
-
-  // if (verbose > 0)
-  // {
-  //   // printer
-  //   double maxerror = 0.0;
-  //   for (int i = 0; i < eval.size(); i++)
-  //     maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
-
-  //   double maxerror2 = 0.0;
-  //   for (int i = 0; i < m; i++)
-  //     maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
-
-  //   double maxerror3 = 0.0;
-  //   for (int i = 0; i < m; ++i)
-  //     maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
-
-  //   std::cout << "# Arpack: time_total=" << time_arpack << " iterations=" << arpackIterations << std::endl;
-  //   std::cout << "# Eigensolver elapsed time " << time_eigensolver << std::endl;
-
-  //   std::cout << "# N "              << std::setw(5) << std::setfill(' ') <<
-  //               "M "             << std::setw(10) <<
-  //               "TOL "           << std::setw(20) <<
-  //               "ESARERROR "     << std::setw(20) <<
-  //               "ARPERROR "      << std::setw(20) <<
-  //               "ESANERROR "     << std::setw(20) <<
-  //               "TIMERATIO "     <<
-  //               std::endl;
-
-  //   std::cout << "# " << n << "   "
-  //             << m << "   "
-  //             << tol << "    "
-  //             << std::scientific
-  //             << std::showpoint
-  //             << std::setprecision(6)
-  //             << maxerror << "      "
-  //             << maxerror2 << "      "
-  //             << maxerror3 << "      "
-  //             << time_eigensolver / time_arpack << " \\\\"
-  //             << std::endl;
-  // }
 
   return 0;
 }
