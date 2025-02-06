@@ -408,7 +408,7 @@ namespace ArpackEigensolver
         : a_(m), nIterationsMax_(nIterationsMax),
           verbosity_level_(verbosity_level),
           nIterations_(0),
-          title_("    ArPackPlusPlus_Algorithms: "),
+          title_("#   ArPackPlusPlus_Algorithms: "),
           blank_(title_.length(), ' ')
     {
     }
@@ -666,20 +666,20 @@ namespace ArpackEigensolver
         iteration++;
 
         // check if we are satisfied
-        if (lambda[nev - 1] >= threshold || nev >= x.size())
+        if (lambda[nev - 1] >= threshold || nev >= nrows)
         {
           // we are happy or cannot increase
           finished = true;
-          if (nev < x.size())
-          {
-            lambda.resize(nev);
-            x.resize(nev);
-          }
-          return;
+          // if (nev < x.size())
+          // {
+          // }
+          break;
         }
 
         // ok, not satisfied; increase nev and provide an initial guess
-        nev = std::min((int)x.size(), (int)(nev * 1.3));
+        nev = std::min((int)nrows, (int)(nev * 1.3));
+        lambda.resize(nev);
+        x.resize(nev);
       }
     }
 

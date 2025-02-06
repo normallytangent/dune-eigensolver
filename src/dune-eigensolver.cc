@@ -17,6 +17,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <typeinfo>
 
 // dune-common includes
 #include <dune/common/parallel/mpihelper.hh> // An initializer of MPI
@@ -34,6 +35,9 @@
 #include <dune/istl/eigenvalue/arpackpp.hh>
 // eigensolver includes
 #include "../dune/eigensolver/eigensolver.hh"
+#include "../dune/eigensolver/qr.hh"
+#include "../dune/eigensolver/symmetric_stewart.hh"
+// #include "../dune/eigensolver/nonsymmetric_stewart.hh"
 
 #include "../dune/eigensolver/arpack_wrapper.hh"
 
@@ -161,6 +165,85 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_identity(int N)
 
 /***************************************************
  *
+ * Matrix Reader for Matlab matrices of the
+ *  checkerboard subdomains.
+ *
+ ***************************************************/
+
+Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> readMatrixFromMatlab(std::string filename, int n = -1) {
+  if (n < 0) {
+    // Use last line in the file to determine the size
+    // https://stackoverflow.com/questions/11876290/c-fastest-way-to-read-only-last-line-of-text-file
+    // seekg returns a pointer
+    // peek returns the next character
+    // tellg returns the current position of the get pointer 
+    std::ifstream file;
+    file.open(filename);
+    if (file.is_open()) {
+      file.seekg(-1, std::ios_base::end);
+      if (file.peek() == '\n') {
+        // Start searching for \n occurrences
+        file.seekg(-1, std::ios_base::cur);
+        for (int i = file.tellg(); i > 0; i--) {
+          if (file.peek() == '\n') {
+            // Found
+            file.get();
+            break;
+          }
+          // Move one character back
+          file.seekg(i, std::ios_base::beg);
+        }
+      }
+
+      std::string lastline;
+      getline(file, lastline, ' ');
+      n = std::stoi(lastline);
+      file.close();
+    } else {
+      DUNE_THROW(Dune::Exception, "Could not open file");
+    }
+  }
+
+  std::ifstream file(filename);
+  auto nnz = std::count(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), '\n');
+  std::cout << "\n nnz: " << nnz;
+  auto nny = n * 30;
+  std::cout << "\n nny: " << nny;
+  file.seekg(0, std::ios_base::beg);
+
+  using Mat = Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>>;
+  Mat A(n, n, nnz, Mat::row_wise);
+
+  std::size_t i, j;
+  double entry;
+
+  auto row = A.createbegin();
+  while (file >> i >> j >> entry) {
+    // First check if the current row in the file differs from the current row iterator
+    // If yes, we inrease the row iterator until it matches
+    while (row.index() != i - 1)
+      ++row;
+
+    row.insert(j - 1);
+  }
+
+  // Increment iterator until the end to force build stage to be set to `built`
+  while (row != A.createend())
+    ++row;
+
+  A = 0;
+  file.close();
+  file.open(filename);
+  while (file >> i >> j >> entry) {
+    A[i - 1][j - 1] = entry;
+  }
+
+  return A;
+}
+
+
+/***************************************************
+ *
  * Do performance tests for Gram-Schmidt and Matmul
  *
  ***************************************************/
@@ -262,35 +345,6 @@ void mgs_performance_test(const Dune::ParameterTree &ptree, int rank, Barrier *p
   }
 #endif
 
-#ifdef NEONINCLUDE
-  double time3;
-  if (rank == 0)
-    std::cout << "start test VECTORIZED block mgs version (neon version)" << std::endl;
-  {
-    // allocate the matrix
-    using MV = MultiVector<double, b>;
-    MV Q{n, m};
-
-    // fill the Q matrix with random numbers
-    auto const seed = 123;
-    std::mt19937 urbg{seed};
-    std::normal_distribution<double> generator{0.0, 1.0};
-    for (std::size_t bj = 0; bj < Q.cols(); bj += MV::blocksize)
-      for (std::size_t i = 0; i < Q.rows(); ++i)
-        for (std::size_t j = 0; j < MV::blocksize; ++j)
-          Q(i, bj + j) = generator(urbg);
-
-    // run test
-    pbarrier->wait(rank);
-    timer.reset();
-    std::vector<double> dp;
-    for (int iter = 0; iter < n_iter; iter++)
-      orthonormalize_neon_b8_v2(Q);
-    pbarrier->wait(rank);
-    time3 = timer.elapsed();
-  }
-#endif
-
   if (rank == 0)
   {
     double flops = pbarrier->nthreads() * n_iter * flops_orthonormalize(n, m);
@@ -314,121 +368,100 @@ void mgs_performance_test(const Dune::ParameterTree &ptree, int rank, Barrier *p
   return;
 }
 
-// @NOTE Implement this without islands matrix. Would be nice to see what
 // percentage of the performance or time is spent in matrix vector multiplications
-//int matvec_performance_test(const Dune::ParameterTree &ptree)
-//{
-//  try
-//  {
-//    auto istlA = get_islands_matrix(ptree);
-//
-//    std::size_t n = istlA.N();
-//    std::size_t nnz = istlA.nonzeroes();
-//    std::cout << "n=" << n << " nnz=" << nnz << std::endl;
-//
-//    std::size_t n_iter = ptree.get<std::size_t>("mv.n_iter"); // number of iterations for test
-//    std::size_t n_vectors = ptree.get<std::size_t>("mv.m");
-//    const std::size_t block_size = 8;
-//
-//    MultiVector<double, block_size> M1{n, n_vectors};
-//    MultiVector<double, block_size> M2{n, n_vectors};
-//
-//    Dune::Timer timer;
-//
-//    auto const seed = 123;
-//    std::mt19937 urbg{seed};
-//    std::normal_distribution<double> generator{0.0, 1.0};
-//    for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//      for (std::size_t i = 0; i < M1.rows(); ++i)
-//        for (std::size_t j = 0; j < block_size; ++j)
-//          M1(i, bj + j) = generator(urbg);
-//
-//    // first version: naive matrix vector multiplication
-//    std::cout << "mv naive version" << std::endl;
-//    {
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_naive(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT naive " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//
-//    // second version: multiple rhs matrix vector multiplication
-//    std::cout << "mv block version" << std::endl;
-//    {
-//      for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//        for (std::size_t i = 0; i < M1.rows(); ++i)
-//          for (std::size_t j = 0; j < block_size; ++j)
-//            M1(i, bj + j) = generator(urbg);
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_blocked(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT blocked " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//
-//#ifdef VCINCLUDE
-//    // third version: multiple rhs matrix vector multiplication
-//    std::cout << "mv vectorized block version (Intel version)" << std::endl;
-//    {
-//      for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//        for (std::size_t i = 0; i < M1.rows(); ++i)
-//          for (std::size_t j = 0; j < block_size; ++j)
-//            M1(i, bj + j) = generator(urbg);
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_avx2_b8(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT avx2 " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//#endif
-//
-//#ifdef NEONINCLUDE
-//    // fourth version: multiple rhs matrix vector multiplication vectorized for arm
-//    std::cout << "mv vectorized block version (arm version)" << std::endl;
-//    {
-//      for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//        for (std::size_t i = 0; i < M1.rows(); ++i)
-//          for (std::size_t j = 0; j < block_size; ++j)
-//            M1(i, bj + j) = generator(urbg);
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_neon_b8(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT neon " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//#endif
-//  }
-//  catch (Dune::Exception &e)
-//  {
-//    std::cerr << "Dune reported error: " << e << std::endl;
-//  }
-//  catch (...)
-//  {
-//    std::cerr << "Unknown exception thrown!" << std::endl;
-//  }
-//  return 0;
-//}
+int matvec_performance_test(const Dune::ParameterTree &ptree)
+{
+ try
+ {
+   int N = ptree.get<int>("mv.N");
+   auto istlA = get_laplacian_dirichlet(N);
+
+   std::size_t n = istlA.N();
+   std::size_t nnz = istlA.nonzeroes();
+   std::cout << "n=" << n << " nnz=" << nnz << std::endl;
+
+   std::size_t n_iter = ptree.get<std::size_t>("mv.n_iter"); // number of iterations for test
+   std::size_t n_vectors = ptree.get<std::size_t>("mv.m");
+   const std::size_t block_size = 8;
+
+   MultiVector<double, block_size> M1{n, n_vectors};
+   MultiVector<double, block_size> M2{n, n_vectors};
+
+   Dune::Timer timer;
+
+   auto const seed = 123;
+   std::mt19937 urbg{seed};
+   std::normal_distribution<double> generator{0.0, 1.0};
+   for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
+     for (std::size_t i = 0; i < M1.rows(); ++i)
+       for (std::size_t j = 0; j < block_size; ++j)
+         M1(i, bj + j) = generator(urbg);
+
+   // first version: naive matrix vector multiplication
+   std::cout << "mv naive version" << std::endl;
+   {
+     timer.reset();
+     for (int k = 0; k < n_iter; k++)
+     {
+       matmul_sparse_tallskinny_naive(M2, istlA, M1);
+       std::swap(M1, M2);
+     }
+     auto time1 = timer.elapsed();
+     std::cout << "elapsed time = " << time1 << std::endl;
+     double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
+     std::cout << "RESULT naive " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
+   }
+
+   // second version: multiple rhs matrix vector multiplication
+   std::cout << "mv block version" << std::endl;
+   {
+     for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
+       for (std::size_t i = 0; i < M1.rows(); ++i)
+         for (std::size_t j = 0; j < block_size; ++j)
+           M1(i, bj + j) = generator(urbg);
+     timer.reset();
+     for (int k = 0; k < n_iter; k++)
+     {
+       matmul_sparse_tallskinny_blocked(M2, istlA, M1);
+       std::swap(M1, M2);
+     }
+     auto time1 = timer.elapsed();
+     std::cout << "elapsed time = " << time1 << std::endl;
+     double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
+     std::cout << "RESULT blocked " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
+   }
+
+#ifdef VCINCLUDE
+   // third version: multiple rhs matrix vector multiplication
+   std::cout << "mv vectorized block version (Intel version)" << std::endl;
+   {
+     for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
+       for (std::size_t i = 0; i < M1.rows(); ++i)
+         for (std::size_t j = 0; j < block_size; ++j)
+           M1(i, bj + j) = generator(urbg);
+     timer.reset();
+     for (int k = 0; k < n_iter; k++)
+     {
+       matmul_sparse_tallskinny_avx2_b8(M2, istlA, M1);
+       std::swap(M1, M2);
+     }
+     auto time1 = timer.elapsed();
+     std::cout << "elapsed time = " << time1 << std::endl;
+     double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
+     std::cout << "RESULT avx2 " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
+   }
+#endif
+ }
+ catch (Dune::Exception &e)
+ {
+   std::cerr << "Dune reported error: " << e << std::endl;
+ }
+ catch (...)
+ {
+   std::cerr << "Unknown exception thrown!" << std::endl;
+ }
+ return 0;
+}
 
 /***************************************************
  *
@@ -444,7 +477,6 @@ std::vector<double> eigenvalues_laplace_dirichlet_2d(std::size_t N)
   for (std::size_t i = 0; i < N; ++i)
     for (std::size_t j = 0; j < N; ++j)
       ev[j * N + i] = 4.0 * (std::sin(0.5 * h * (i + 1) * M_PI) * std::sin(0.5 * h * (i + 1) * M_PI) + std::sin(0.5 * h * (j + 1) * M_PI) * std::sin(0.5 * h * (j + 1) * M_PI));
-  //std::sort(ev.begin(), ev.end(),std::greater{});
   std::sort(ev.begin(), ev.end());
   return ev;
 }
@@ -498,7 +530,8 @@ void unshift_matrix(ISTLM &A, double shift)
   }
 }
 
-void printer(const std::vector<double> &self_eval, const std::vector<double> &compare_eval, const std::vector<double> &precise_compare_eval, const std::string method, const std::string submethod)
+template <typename VEC>
+void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_compare_eval, const std::string method, const std::string submethod)
 {
   if (method == "std")
   {
@@ -556,27 +589,40 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::string method = ptree.get<std::string>("ev.method");
   auto A = get_laplacian_dirichlet(N);
   auto B = get_identity(N);
+
   if (method == "gen")
   {
     A = get_laplacian_neumann(N);
     B = get_laplacian_B(N, overlap);
   }
+  // B = get_identity(ceil(sqrt(A.N())));
+  // A = readMatrixFromMatlab("aharmonic_gevp_Ahat2_subdomain_1.txt");
+  // B = readMatrixFromMatlab("aharmonic_gevp_Bhat2_subdomain_1.txt", A.N());
+  // A = readMatrixFromMatlab("aharmonic_gevp_coordpart_Ahat2_subdomain_0.txt");
+  // B = readMatrixFromMatlab("aharmonic_gevp_coordpart_Bhat2_subdomain_0.txt", A.N());
+  std::cout << '\n' << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
+
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
-  //Dune::printmatrix(std::cout, A, "Unchanged", "");
+  // Dune::printmatrix(std::cout, A, "Unchanged A:", "");
+  // Dune::printmatrix(std::cout, B, "Unchanged B:", "");
 
   // obtain more parameters
   std::size_t br = block_type::rows;
   std::size_t bc = block_type::cols;
   std::size_t n = A.N() * br;
+  std::cout << "\n " << " n: " << n << " A.N(): " << A.N() << " br: " << br << '\n';
   int m = ptree.get<int>("ev.m");
   int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
   double shift = ptree.get<double>("ev.shift");
   double regularization = ptree.get<double>("ev.regularization");
   double tol = ptree.get<double>("ev.tol");
+  double threshold = ptree.get<double>("ev.threshold");
   int verbose = ptree.get<int>("ev.verbose");
   unsigned int seed = ptree.get<unsigned int>("ev.seed");
   std::string submethod = ptree.get<std::string>("ev.submethod");
+  bool adapt = ptree.get<bool>("ev.adapt");
+  bool symmetric = ptree.get<bool>("ev.symmetric");
   int stopperswitch = ptree.get<int>("ev.stop");
 
   // first compute eigenvalues with arpack to great accuracy
@@ -586,38 +632,48 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   vec = 0.0;
   std::vector<ISTLV> eigenvectors(m, vec), eigenvectors2(m ,vec);
   ArpackEigensolver::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A, maxiter, verbose);
-  if (method == "std")
+  if ( method == "gen" && adapt)
   {
-    arpack.computeStdSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
+    arpack.computeGenSymShiftInvertMinMagnitudeAdaptive(B, 1e-14, eigenvectors, eigenvalues_arpack, shift, threshold, m);
   }
-  else if (method == "gen")
+  else if (method == "gen" && !adapt)
   {
     arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
+  }
+  else if (method == "std")
+  {
+    arpack.computeStdSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
   }
 
   Dune::Timer timer_arpack;
   timer_arpack.reset();
-  if (method == "std")
+  if (method == "gen" && adapt)
   {
-     arpack.computeStdSymMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
+    arpack.computeGenSymShiftInvertMinMagnitudeAdaptive(B, tol, eigenvectors2, eigenvalues_arpack2, shift, threshold, m);
   }
-  else if (method == "gen")
+  else if (method == "gen" && !adapt)
   {
     arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
+  }
+  else if (method == "std")
+  {
+     arpack.computeStdSymMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
   }
   auto time_arpack = timer_arpack.elapsed();
   auto arpackIterations = arpack.getIterationCount();
 
   // Then compute the smallest eigenvalue with ISTL's arpack wrapper
-  ISTLM  control_(A);
-  Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(control_.axpy(shift,B));
-  double w = 0.0;
-  arp.computeSymMinMagnitude(tol,vec,w);
-  std::cout << "# Smallest eigenvalue from Arpack: " << std::scientific << w-shift << std::endl;
+  // ISTLM  control_(A);
+  // Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(control_.axpy(shift,B));
+  // double w = 0.0;
+  // arp.computeSymMinMagnitude(tol,vec,w);
+  // std::cout << "# Smallest eigenvalue from Arpack: " << std::scientific << w-shift << std::endl;
+  std::cout << std::scientific; //<< std::endl;
 
   // next compute eigenvalues with given tolerance in eigensolver
-  std::vector<double> eval(m,0.0);
-  std::vector<std::vector<double>> evec(m);
+  using VEC = std::vector<double>;
+  VEC eval(m,0.0);
+  std::vector<VEC> evec(m);
   for (auto &v : evec)
     v.resize(n);
 
@@ -625,142 +681,95 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   std::vector<double> eigenvalues_analytical(N, 0.0);
   eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
 
-  double time_eigensolver;
+  // Add computation of the smallest eigenvalues with the new stopping criterion here
+  // std::vector<double> evalstop(m, 0.0);
+  // std::vector<std::vector<double>> evecstop(m);
+  // for (auto &v : evecstop)
+    // v.resize(n);
+
+  Dune::Timer timer_eigensolver;
+  timer_eigensolver.reset();
+  if (method == "gen" && submethod == "stw" && adapt)
+  {
+    if (symmetric)
+      GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+    // else
+      // GeneralizedNonsymmetricStewart(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
+  else if (method == "gen" && submethod == "stw" && !adapt)
+  {
+    GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
+  else if (method == "gen" && submethod == "ftw" && adapt)
+  {
+    GeneralizedInverseAdaptive(A, B, shift, regularization, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+  } 
+  else if (method == "gen" && submethod == "ftw" && !adapt)
+  {
+    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
+  } 
+  else if (method == "std" && submethod == "stw")
+  {
+    SymmetricStewart(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
   if (method == "std" && submethod == "ftw")
   {
-    Dune::Timer timer_eigensolver;
-    timer_eigensolver.reset();
     StandardInverse(A, shift, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
-    time_eigensolver = timer_eigensolver.elapsed();
-    printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
-  else if (method == "gen" && submethod == "ftw")
+  auto time_eigensolver = timer_eigensolver.elapsed();
+
+  if ( method == "gen")
   {
-    Dune::Timer timer_eigensolver;
-    timer_eigensolver.reset();
-    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed, 2);
-    time_eigensolver = timer_eigensolver.elapsed();
     printer(eval, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
   }
-
-  // Add computation of the smallest eigenvalues with the new stopping criterion here
-  std::vector<double> evalstop(m, 0.0);
-  std::vector<std::vector<double>> evecstop(m);
-  for (auto &v : evecstop)
-    v.resize(n);
-  
-  double time_eigensolver_new_stopper;
-  if (method == "std" && submethod == "stw")
+  else if ( method == "std")
   {
-    Dune::Timer timer_eigensolver_new_stopper;
-    timer_eigensolver_new_stopper.reset();
-    SymmetricStewart(A, shift, tol, maxiter, m, evalstop, evecstop, eigenvalues_analytical, verbose, seed, stopperswitch);
-    time_eigensolver_new_stopper = timer_eigensolver_new_stopper.elapsed();
-    printer(evalstop, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
+    printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
   }
-  else if (method == "gen" && submethod == "stw")
-  {
-    Dune::Timer timer_eigensolver;
-    timer_eigensolver.reset();
-    GeneralizedSymmetricStewart(A, B, shift, regularization, tol, maxiter, m, evalstop, evecstop, eigenvalues_arpack2, verbose, seed, stopperswitch);
-    time_eigensolver_new_stopper = timer_eigensolver.elapsed();
-    printer(evalstop, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
-  }
+  // std::cout << "Arpack:\n";
+  // show(eigenvalues_arpack2);
+  // std::cout << "\nArpack small tol:\n";
+  // show(eigenvalues_arpack);
 
+  // if (verbose > 0)
+  // {
+  //   // printer
+  //   double maxerror = 0.0;
+  //   for (int i = 0; i < eval.size(); i++)
+  //     maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
 
-  if (verbose > 0)
-  {
-  // printer
-  double maxerror = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
+  //   double maxerror2 = 0.0;
+  //   for (int i = 0; i < m; i++)
+  //     maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
 
-  double maxerror2 = 0.0;
-  for (int i = 0; i < m; i++)
-    maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
+  //   double maxerror3 = 0.0;
+  //   for (int i = 0; i < m; ++i)
+  //     maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
 
-  double maxerror3 = 0.0;
-  for (int i = 0; i < m; ++i)
-    maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
+  //   std::cout << "# Arpack: time_total=" << time_arpack << " iterations=" << arpackIterations << std::endl;
+  //   std::cout << "# Eigensolver elapsed time " << time_eigensolver << std::endl;
 
-  double maxerror4 = 0.0;
-  for (int i = 0; i < m; ++i)
-    maxerror4 = std::max(maxerror4, std::abs(evalstop[i]-eigenvalues_analytical[i]));
+  //   std::cout << "# N "              << std::setw(5) << std::setfill(' ') <<
+  //               "M "             << std::setw(10) <<
+  //               "TOL "           << std::setw(20) <<
+  //               "ESARERROR "     << std::setw(20) <<
+  //               "ARPERROR "      << std::setw(20) <<
+  //               "ESANERROR "     << std::setw(20) <<
+  //               "TIMERATIO "     <<
+  //               std::endl;
 
-  double maxerror5 = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror5 = std::max(maxerror, std::abs(evalstop[i] - eigenvalues_arpack[i]));
-
-    std::cout << "# Arpack elapsed time " << time_arpack << std::endl;
-    std::cout << "# Eigensolver elapsed time " << time_eigensolver << std::endl;
-    std::cout << "# Eigensolver with stopping criterion elapsed time " << time_eigensolver_new_stopper << std::endl;
-
-    std::cout << "# N "              << std::setw(5) << std::setfill(' ') <<
-                "M "             << std::setw(10) <<
-                "TOL "           << std::setw(15) <<
-                "ESARERROR "     << std::setw(20) <<
-                "ESSTARERROR "   << std::setw(15) <<
-                "ARPERROR "      << std::setw(20) <<
-                "ESANERROR "     << std::setw(20) <<
-                "ESSTANERROR "   << std::setw(15) <<
-                "TIMERATIO "     << std::setw(20) <<
-                "TIMEWSTOPRATIO "<< std::setw(15) <<
-                "ARPACKITER "   <<
-                std::endl;
-
-    std::cout << "# " << n << "   "
-              << m << "   "
-              << tol << "    "
-              << std::scientific
-              << std::showpoint
-              << std::setprecision(6)
-              << maxerror << "      "
-              << maxerror5 << "     "
-              << maxerror2 << "      "
-              << maxerror3 << "      "
-              << maxerror4 << "      "
-              << time_eigensolver / time_arpack << "      "
-              << time_eigensolver_new_stopper / time_arpack << "       "
-              << arpackIterations << " \\\\"
-              << std::endl;
-  }
-
-
-  //std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
-                                                                 //{
-                                                                   //return a > b;
-                                                                 //});
-  //std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
-                                                                   //{
-                                                                     //return a > b;
-                                                                   //});
-  //std::sort(eigenvalues_analytical.begin(),eigenvalues_analytical.end(),[](auto a, auto b)
-                                                                 //{
-                                                                   //return a > b;
-                                                                 //});
-  //std::cout << "Relative residual of the stopping criterion with the arpack small tolerance\n";
-  //std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
-  //RelativeResidual(eval, evalstop, eigenvalues_arpack);
-
-  //std::cout << "Relative residual of the stopping criterion with the arpack\n";
-  //std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
-  //RelativeResidual(eval, evalstop, eigenvalues_arpack2);
-
-  //std::cout << "Relative residual of the stopping criterion with the analytical solution\n";
-  //std::cout << "Eigensolver" << std::setw(20) << "StoppingCriterion";
-  //RelativeResidual(eval, evalstop, eigenvalues_analytical);
-
-  //std::sort(eigenvalues_arpack.begin(),eigenvalues_arpack.end(),[](auto a, auto b)
-                                                                 //{
-                                                                   //return a < b;
-                                                                 //});
-  //std::sort(eigenvalues_arpack2.begin(),eigenvalues_arpack2.end(),[](auto a, auto b)
-                                                                   //{
-                                                                     //return a < b;
-                                                                   //});
-  //std::cout << "Relative residual of the arpack solutions with the analytical solution\n";
-  //std::cout << "Arpack small tol" << std::setw(16) << "Arpack";
-  //RelativeResidual(eigenvalues_arpack, eigenvalues_arpack2, eigenvalues_analytical);
+  //   std::cout << "# " << n << "   "
+  //             << m << "   "
+  //             << tol << "    "
+  //             << std::scientific
+  //             << std::showpoint
+  //             << std::setprecision(6)
+  //             << maxerror << "      "
+  //             << maxerror2 << "      "
+  //             << maxerror3 << "      "
+  //             << time_eigensolver / time_arpack << " \\\\"
+  //             << std::endl;
+  // }
 
   return 0;
 }
@@ -807,7 +816,7 @@ int main(int argc, char **argv)
   // eigenvalues_test(ptree, 0, &barrier);
   // for (int rank = 0; rank < numthreads - 1; ++rank)
   //   threads[rank].join();
-
+  // matvec_performance_test(ptree);
   std::cout << "# " << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
   smallest_eigenvalues_convergence_test(ptree);
 

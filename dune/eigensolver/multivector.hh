@@ -126,6 +126,19 @@ public:
     return *this;
   }
 
+  friend MultiVector<T, b> operator-(const MultiVector<T, b>& l, const MultiVector<T, b>& r) 
+  {
+    if (l.rows() != r.rows() || l.cols() != r.cols())
+      throw std::invalid_argument("MultiVector subtraction: length does not match");
+
+    MultiVector<T, b> result(l.rows(), l.cols());
+        
+    for (size_t i = 0; i < l.n * l.m; ++i)
+      result.p[i] = l.p[i] - r.p[i];
+
+    return result;
+  }
+
   void resize(std::size_t nev) 
   {
     // if (nev % b != 0) 
