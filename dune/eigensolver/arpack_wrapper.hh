@@ -404,7 +404,7 @@ namespace ArpackEigensolver
      */
     ArPackPlusPlus_Algorithms(const BCRSMatrix &m,
                               const unsigned int nIterationsMax = 100000,
-                              const unsigned int verbosity_level = 0)
+                              const int verbosity_level = 0)
         : a_(m), nIterationsMax_(nIterationsMax),
           verbosity_level_(verbosity_level),
           nIterations_(0),
@@ -701,7 +701,7 @@ namespace ArpackEigensolver
     const unsigned int nIterationsMax_;
 
     // verbosity setting
-    const unsigned int verbosity_level_;
+    const int verbosity_level_;
 
     // memory for storing temporary variables (mutable as they shall
     // just be effectless auxiliary variables of the const apply*(...)
