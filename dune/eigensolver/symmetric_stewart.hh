@@ -25,7 +25,12 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
   const std::size_t n = A.N() * br;
 
   std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible multiple of the blocksize
-  MultiVector<double, b> Q1{n, m}, Q3{n, m};
+
+  // The initial search space can only be the lesser of the
+  // blocksize and the size requested by the user.
+  std::size_t initial_nev = std::min((int) b, (int) m);
+
+  MultiVector<double, b> Q1{n, initial_nev}, Q3{n, initial_nev};
 
   //Initialize Raleigh coefficients
   std::vector<VEC> A_hat (Q1.cols(), VEC (Q1.cols(), 0.0));
@@ -50,7 +55,6 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
 
   double time_eigendecomposition, time_matmul_dense;
   double eigentimer = 0, matmultimer = 0;
-  int initial_nev = m;
   bool finished = false;
   int iter = 0, oiter=0, ithelper = 0;
   while(!finished)
@@ -69,8 +73,8 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
     B_orthonormalize_blocked(B, Q1);
 #endif
 
-    Eigen::MatrixXd J(m, m), K(m, m), S(m, m);
-    Eigen::VectorXd D(m);
+    Eigen::MatrixXd J(initial_nev, initial_nev), K(initial_nev, initial_nev), S(initial_nev, initial_nev);
+    Eigen::VectorXd D(initial_nev);
     iter = 0;
     double initial_partial_off = 0.0;
     while ( iter < maxiter)
@@ -145,13 +149,13 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
     }
     
     // Stopping criterion given the desired eigenvalue is reached.
-    if (D(initial_nev - 1) - shift >= threshold || initial_nev >= Q1.cols())
+    if (D(initial_nev - 1) - shift >= threshold || initial_nev >= evec.size())
     {
       finished = true;
 
-      if (eval.size() != m)
-        eval.resize(m);
-      for (size_t i = 0; i < m; ++i)
+      if (eval.size() != initial_nev)
+        eval.resize(initial_nev);
+      for (size_t i = 0; i < initial_nev; ++i)
         eval[i] = D(i) - shift;
 
       if (verbose > 0)
@@ -159,21 +163,19 @@ void GeneralizedSymmetricStewartAdaptive(const ISTLM &inA, const ISTLM &B, doubl
       break;
     }
     // Increase nev and provide an initial guess
-    ithelper = m;
-    m = std::min((int)Q1.cols(), (int)(initial_nev + b));
-    Q1.resize(m);
-    Q3.resize(m);
+    ithelper = initial_nev;
+    initial_nev = std::min((int)evec.size(), (int)(initial_nev + b));
+    Q1.resize(initial_nev);
+    Q3.resize(initial_nev);
 
-    A_hat.resize(m);
+    A_hat.resize(initial_nev);
     for (auto &v : A_hat)
-      v.resize(m, 0);
-
-    initial_nev = m;
+      v.resize(initial_nev, 0);
 
     ++oiter;
   }
 
-  nev = m;
+  m = initial_nev;
 
 
   if (verbose > 1)

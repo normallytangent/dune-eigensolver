@@ -728,15 +728,15 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     // printer
     double maxerror = 0.0;
-    for (int i = 0; i < eval.size(); i++)
+    for (int i = 0; i < std::min(eval.size(), (std::size_t) m); i++)
       maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
 
     double maxerror2 = 0.0;
-    for (int i = 0; i < m; i++)
+    for (int i = 0; i < std::min(eval.size(), (std::size_t) m); i++)
       maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
 
     double maxerror3 = 0.0;
-    for (int i = 0; i < m; ++i)
+    for (int i = 0; i < std::min(eval.size(), (std::size_t) m); ++i)
       maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
 
     std::cout << "\n# Arpack: time_total=" << time_arpack << " iterations=" << arpackIterations << std::endl;
