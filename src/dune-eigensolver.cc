@@ -582,7 +582,7 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
 int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
 {
-  std::cout << "# Smallest eigenvalues \n";
+  std::cout << "# Smallest eigenvalues convergence test\n";
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
