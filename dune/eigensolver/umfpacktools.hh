@@ -20,7 +20,7 @@ public:
     // types
     using ISTLM = Dune::BCRSMatrix<Dune::FieldMatrix<double, brows, bcols>>;
     //using IntType = int; // we use the *_di_* routines of umfpack!
-    using IntType = long long; // we use the *_dl_* routines of umfpack!
+    using IntType = long; // we use the *_di_* routines of umfpack!
 
     // general
     IntType n; // number of rows/columns; it is checked that the matrix is square
