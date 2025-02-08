@@ -37,7 +37,8 @@
 #include "../dune/eigensolver/eigensolver.hh"
 #include "../dune/eigensolver/qr.hh"
 #include "../dune/eigensolver/symmetric_stewart.hh"
-// #include "../dune/eigensolver/nonsymmetric_stewart.hh"
+#include "../dune/eigensolver/nonsymmetric_stewart.hh"
+// #include "../dune/eigensolver/nonsym_test.hh"
 
 #include "../dune/eigensolver/arpack_wrapper.hh"
 
@@ -699,8 +700,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     if (symmetric)
       GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
-    // else
+    else
       // GeneralizedNonsymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+      GeneralizedLOPSI(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   }
   else if (method == "gen" && submethod == "stw" && !adapt)
   {
