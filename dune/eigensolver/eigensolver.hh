@@ -2,6 +2,7 @@
 #define Udune_eigensolver_HH
 
 #include <Eigen/Eigenvalues>
+#include <Eigen/LU>
 #include "multivector.hh"
 #include "umfpacktools.hh"
 #include "kernels_cpp.hh"
