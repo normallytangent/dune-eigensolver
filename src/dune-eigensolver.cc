@@ -744,18 +744,18 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     std::cout << "\n# Arpack: time_total=" << time_arpack << " iterations=" << arpackIterations << std::endl;
     std::cout << "\n# Eigensolver elapsed time " << time_eigensolver << std::endl;
 
-    std::cout << "\n# N= " << n 
-              << " M= " << m
-              << " ACCURACY= " << accuracy
-              << " TOL= " << tol
-              << " THRESHOLD= " << threshold
+    std::cout << "\n# N=" << n
+              << " M=" << m
+              << " ACCURACY=" << accuracy
+              << " TOL=" << tol
+              << " THRESHOLD=" << threshold
               << std::scientific
               << std::showpoint
               << std::setprecision(6)
-              << " ESARERROR= " << maxerror3
-              << " ARPERROR= " << maxerror
-              << " ESANERROR= " << maxerror2 
-              << " TIMERATIO= " << time_eigensolver / time_arpack << " \\\\"
+              << " ESARERROR=" << maxerror3
+              << " ARPERROR=" << maxerror
+              << " ESANERROR=" << maxerror2
+              << " TIMERATIO=" << time_eigensolver / time_arpack << " \\\\"
               << std::endl;
   }
 
