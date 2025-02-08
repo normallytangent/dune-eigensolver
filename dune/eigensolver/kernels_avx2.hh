@@ -57,6 +57,87 @@ void dot_products_diagonal_avx2_b8(std::vector<double> &dp, const MV &Q1, const 
   }
 }
 
+// ! compute dot product of each column in Q1 with same column in Q2; vectorized for avx2
+// template <typename MV>
+// void dot_products_all_avx2_b8(std::vector<std::vector<double>> &dp, const MV &Q1, const MV &Q2)
+// {
+//   if (dp.size() != Q1.cols())
+//     dp.resize(Q1.cols());
+//   for (auto &v : dp)
+//     if (dp.size() != Q1.cols())
+//       dp.resize(Q1.cols());
+//   if (Q1.rows() != Q2.rows())
+//     throw std::invalid_argument("dot_products_blocked: number of rows does not match");
+//   if (Q1.cols() != Q2.cols())
+//     throw std::invalid_argument("dot_products_blocked: number of columns does not match");
+//   std::size_t n = Q1.rows();
+//   std::size_t m = Q1.cols();
+//   std::size_t b = MV::blocksize;
+//   Vec4d SS[8][2];
+//   Vec4d S0, S1; // registers to store scalar products
+//   Vec4d X0, X1;
+//   Vec4d Y0, Y1;
+
+
+// template <typename MV>
+// void dot_products_all_avx2_b8(std::vector<std::vector<double>> &dp, const MV &Q1, const MV &Q2)
+// {
+//   if (Q1.rows() != Q2.rows())
+//     throw std::invalid_argument("dot_products_blocked: number of rows does not match");
+//   if (Q1.cols() != Q2.cols())
+//     throw std::invalid_argument("dot_products_blocked: number of columns does not match");
+
+//   std::size_t n = Q1.rows();
+//   std::size_t m = Q1.cols();
+//   std::size_t b = 8; // Block size
+
+//   dp.resize(m, std::vector<double>(m, 0.0)); // Resize dp to match the result dimensions
+
+//   Vec4d S0, S1; // registers to store scalar products
+//   Vec4d X0, X1;
+//   Vec4d Y0, Y1;
+
+//   for (std::size_t bj1 = 0; bj1 < m; bj1 += b)
+//   {
+//     for (std::size_t bj2 = 0; bj2 < m; bj2 += b)
+//     {
+//       for (std::size_t i = 0; i < b; i += 4)
+//       {
+//         for (std::size_t j = 0; j < b; j += 4)
+//         {
+//           // clear summation variables
+//           S0 = Vec4d(0.0);
+//           S1 = Vec4d(0.0);
+
+//           for (std::size_t k = 0; k < n; ++k)
+//           {
+//             // Load values from Q1 and Q2
+//             X0.load(&(Q1(k, bj1 + i)));
+//             X1.load(&(Q1(k, bj1 + i + 4)));
+//             Y0.load(&(Q2(k, bj2 + j)));
+//             Y1.load(&(Q2(k, bj2 + j + 4)));
+
+//             // Perform the multiplication and add to the sum
+//             S0 = mul_add(X0, Y0, S0);
+//             S1 = mul_add(X1, Y1, S1);
+//           }
+
+//           // store results
+//           double s[2][4];
+//           S0.store(s[0]);
+//           S1.store(s[1]);
+
+//           for (std::size_t jj = 0; jj < 4; ++jj)
+//           {
+//             dp[bj1 + i + jj][bj2 + j] = s[0][jj];
+//             dp[bj1 + i + jj][bj2 + j + 4] = s[1][jj];
+//           }
+//         }
+//       }
+//     }
+//   }
+// }
+
 template <typename MV>
 /** @brief Orthogonalize a given MultiVector, block version using AVX2 and block size 8
  *
