@@ -605,6 +605,7 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
   unsigned int seed = ptree.get<unsigned int>("ev.seed");
   std::string method = ptree.get<std::string>("ev.method");
   std::string submethod = ptree.get<std::string>("ev.submethod");
+  double threshold = ptree.get<double>("ev.threshold");
   int stopperswitch = ptree.get<int>("ev.stop");
 
   double accuracy = (double)accurate/4.0;
@@ -619,7 +620,8 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     pbarrier->wait(rank);
     timer.reset();
 
-    GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    // GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    GeneralizedInverseAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
 
     pbarrier->wait(rank);
     auto time = timer.elapsed();
@@ -649,7 +651,8 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     pbarrier->wait(rank);
     timer.reset();
 
-    GeneralizedSymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    // GeneralizedSymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
 
     pbarrier->wait(rank);
     auto time = timer.elapsed();
@@ -679,7 +682,8 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     Dune::Timer timer;
     timer.reset();
     ArpackEigensolver::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
-    arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues, shift);
+    // arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues, shift);
+    arpack.computeGenSymShiftInvertMinMagnitudeAdaptive(B, 1e-14, eigenvectors, eigenvalues, shift, threshold, m);
     auto time = timer.elapsed();
     std::cout << "\n### " << method << ": " << submethod << '\n';
     for (int i = 0; i < eigenvalues.size(); i++)
