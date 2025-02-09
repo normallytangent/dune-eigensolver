@@ -630,10 +630,9 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
       for (int i = 0; i < eval.size(); i++)
         std::cout << std::setw(3) << std::setfill('0') << i
                   << " "
-                  // << std::setw(20)
                   << std::scientific
                   << std::showpoint
-                  << std::setprecision(6)
+                  << std::setprecision(12)
                   << eval[i]
                   << std::endl;
       std::cout << "# rank: " << rank << ": Eigensolver elapsed time " << time << std::endl;
@@ -660,10 +659,9 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
       for (int i = 0; i < eval.size(); i++)
         std::cout << std::setw(3) << std::setfill('0') << i
                   << " "
-                  // << std::setw(20)
                   << std::scientific
                   << std::showpoint
-                  << std::setprecision(6)
+                  << std::setprecision(12)
                   << eval[i]
                   << std::endl;
       std::cout << "# rank: " << rank << ": Eigensolver elapsed time " << time << std::endl;
@@ -686,10 +684,9 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     for (int i = 0; i < eigenvalues.size(); i++)
       std::cout << std::setw(3) << std::setfill('0') << i
                 << " "
-                // << std::setw(20)
                 << std::scientific
                 << std::showpoint
-                << std::setprecision(6)
+                << std::setprecision(12)
                 << eigenvalues[i]
                 << std::endl;
     std::cout << "# rank: " << rank << ": Arpack elapsed time " << time << std::endl;
@@ -930,16 +927,16 @@ int main(int argc, char **argv)
   //  for (int rank = 0; rank < numthreads - 1; ++rank)
   //    threads[rank].join();
 
-  // for (int rank = 0; rank < numthreads - 1; ++rank)
-    // threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
-  // eigenvalues_test(ptree, 0, &barrier);
-  // for (int rank = 0; rank < numthreads - 1; ++rank)
-    // threads[rank].join();
+  for (int rank = 0; rank < numthreads - 1; ++rank)
+    threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
+  eigenvalues_test(ptree, 0, &barrier);
+  for (int rank = 0; rank < numthreads - 1; ++rank)
+    threads[rank].join();
 
   // matvec_performance_test(ptree);
 
   std::cout << "# " << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
-  smallest_eigenvalues_convergence_test(ptree);
+  // smallest_eigenvalues_convergence_test(ptree);
 
   return 0;
 }
