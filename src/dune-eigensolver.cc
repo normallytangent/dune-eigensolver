@@ -37,7 +37,7 @@
 #include "../dune/eigensolver/eigensolver.hh"
 #include "../dune/eigensolver/qr.hh"
 #include "../dune/eigensolver/symmetric_stewart.hh"
-#include "../dune/eigensolver/nonsymmetric_stewart.hh"
+// #include "../dune/eigensolver/nonsymmetric_stewart.hh"
 // #include "../dune/eigensolver/nonsym_test.hh"
 
 #include "../dune/eigensolver/arpack_wrapper.hh"
@@ -536,14 +536,14 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
 {
   if (method == "std")
   {
-    std::cout << "\n## " << method << ": " << submethod << "    "
+    std::cout << "\n### " << method << ": " << submethod << "    "
                        << " ANALYTICAL"    << " "
                        << " ARP-SMALL-TOL" << " "
                        << " ES-ARP-SMALL"  << " "
                        << " ES-AN ERROR"
                        << std::endl;
     for (int i = 0; i < self_eval.size(); i++)
-      std::cout << std::setw(2) << std::setfill('0') << i
+      std::cout << std::setw(3) << std::setfill('0') << i
                 << " "
                 << std::scientific
                 << std::showpoint
@@ -557,14 +557,14 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
   }
   else if (method == "gen")
   {
-    std::cout << "\n## " << method << ": " << submethod << "    "
+    std::cout << "\n### " << method << ": " << submethod << "    "
                        << " ARP-SMALL-TOL" << " "
                        << " ARPACK-TOL"    << " "
                        << " ES-ARP-SMALL"   << " "
                        << " ES-AR ERROR"
                       << std::endl;
     for (int i = 0; i < self_eval.size(); i++)
-      std::cout << std::setw(2) << std::setfill('0') << i
+      std::cout << std::setw(3) << std::setfill('0') << i
                 << " "
                 << std::scientific
                 << std::showpoint
@@ -575,8 +575,126 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
                 << std::abs(self_eval[i] - precise_compare_eval[i]) << " "
                 << std::abs(self_eval[i] - compare_eval[i])
                 << std::endl;
+    std::cout << "# printing ends...\n";
 
   }
+}
+
+int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarrier)
+{
+  std::cout << "# Smallest eigenvalues performance test\n";
+  // set up matrix
+  int N = ptree.get<int>("ev.N");
+  int overlap = ptree.get<int>("ev.overlap");
+  auto A = get_laplacian_neumann(N);
+  auto B = get_laplacian_B(N, overlap);
+
+  using ISTLM = decltype(A);
+  using block_type = typename ISTLM::block_type;
+
+  // obtain more parameters
+  std::size_t br = block_type::rows;
+  std::size_t bc = block_type::cols;
+  std::size_t n = A.N() * br;
+  int m = ptree.get<int>("ev.M");
+  int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
+  double shift = ptree.get<double>("ev.shift");
+  double regularization = ptree.get<double>("ev.regularization");
+  int accurate = ptree.get<double>("ev.accurate");
+  double tol = ptree.get<double>("ev.tol");
+  int verbose = ptree.get<int>("ev.verbose");
+  unsigned int seed = ptree.get<unsigned int>("ev.seed");
+  std::string method = ptree.get<std::string>("ev.method");
+  std::string submethod = ptree.get<std::string>("ev.submethod");
+  int stopperswitch = ptree.get<int>("ev.stop");
+
+  double accuracy = (double)accurate/4.0;
+
+  if (submethod == "ftw")
+  {
+    std::vector<double> eval(m);
+    std::vector<std::vector<double>> evec(m);
+    for (auto &v : evec)
+      v.resize(n);
+    Dune::Timer timer;
+    pbarrier->wait(rank);
+    timer.reset();
+
+    GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+
+    pbarrier->wait(rank);
+    auto time = timer.elapsed();
+    if (rank == 0)
+    {
+      std::cout << "\n### " << method << ": " << submethod << '\n';
+      for (int i = 0; i < eval.size(); i++)
+        std::cout << std::setw(3) << std::setfill('0') << i
+                  << " "
+                  // << std::setw(20)
+                  << std::scientific
+                  << std::showpoint
+                  << std::setprecision(6)
+                  << eval[i]
+                  << std::endl;
+      std::cout << "# rank: " << rank << ": Eigensolver elapsed time " << time << std::endl;
+    }
+  }
+
+  if (submethod == "stw")
+  {
+    std::vector<double> eval(m);
+    std::vector<std::vector<double>> evec(m);
+    for (auto &v : evec)
+      v.resize(n);
+    Dune::Timer timer;
+    pbarrier->wait(rank);
+    timer.reset();
+
+    SymmetricStewart(A, shift, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+
+    pbarrier->wait(rank);
+    auto time = timer.elapsed();
+    if (rank == 0)
+    {
+      std::cout << "\n### " << method << ": " << submethod << '\n';
+      for (int i = 0; i < eval.size(); i++)
+        std::cout << std::setw(3) << std::setfill('0') << i
+                  << " "
+                  // << std::setw(20)
+                  << std::scientific
+                  << std::showpoint
+                  << std::setprecision(6)
+                  << eval[i]
+                  << std::endl;
+      std::cout << "# rank: " << rank << ": Eigensolver elapsed time " << time << std::endl;
+    }
+  }
+
+  if (submethod == "arpack" && rank == 0)
+  {
+    using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
+    ISTLV vec(A.N());
+    vec = 0.0;
+    std::vector<ISTLV> eigenvectors(m, vec);
+    std::vector<double> eigenvalues(m, 0.0);
+    Dune::Timer timer;
+    timer.reset();
+    ArpackEigensolver::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
+    arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues, shift);
+    auto time = timer.elapsed();
+    std::cout << "\n### " << method << ": " << submethod << '\n';
+    for (int i = 0; i < eigenvalues.size(); i++)
+      std::cout << std::setw(3) << std::setfill('0') << i
+                << " "
+                // << std::setw(20)
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << eigenvalues[i]
+                << std::endl;
+    std::cout << "# rank: " << rank << ": Arpack elapsed time " << time << std::endl;
+  }
+  return 0;
 }
 
 // this must be called sequentially
@@ -700,9 +818,9 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     if (symmetric)
       GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
-    else
+    // else
       // GeneralizedNonsymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
-      GeneralizedLOPSI(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+      // GeneralizedLOPSI(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   }
   else if (method == "gen" && submethod == "stw" && !adapt)
   {
@@ -714,7 +832,7 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   } 
   else if (method == "gen" && submethod == "ftw" && !adapt)
   {
-    GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, 2);
+    GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
   } 
   else if (method == "std" && submethod == "stw")
   {
@@ -808,14 +926,16 @@ int main(int argc, char **argv)
   //  for (int rank = 0; rank < numthreads - 1; ++rank)
   //    threads[rank].join();
 
-  // for (int rank = 0; rank < numthreads - 1; ++rank)
-  //   threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
-  // eigenvalues_test(ptree, 0, &barrier);
-  // for (int rank = 0; rank < numthreads - 1; ++rank)
-  //   threads[rank].join();
+  for (int rank = 0; rank < numthreads - 1; ++rank)
+    threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
+  eigenvalues_test(ptree, 0, &barrier);
+  for (int rank = 0; rank < numthreads - 1; ++rank)
+    threads[rank].join();
+
   // matvec_performance_test(ptree);
+
   std::cout << "# " << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
-  smallest_eigenvalues_convergence_test(ptree);
+  // smallest_eigenvalues_convergence_test(ptree);
 
   return 0;
 }
