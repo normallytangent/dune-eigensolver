@@ -719,8 +719,8 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     if (grid == "checkerboard")
     {
       // B = get_identity(ceil(sqrt(A.N()))); // Standard eigenvalue problem for debugging
-      A = readMatrixFromMatlab("aharmonic_gevp_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
-      B = readMatrixFromMatlab("aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
+      A = readMatrixFromMatlab("./src_dir/checkerboard-gevps/aharmonic_gevp_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
+      B = readMatrixFromMatlab("./src_dir/checkerboard-gevps/aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
       std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
     }
   }
@@ -930,16 +930,16 @@ int main(int argc, char **argv)
   //  for (int rank = 0; rank < numthreads - 1; ++rank)
   //    threads[rank].join();
 
-  for (int rank = 0; rank < numthreads - 1; ++rank)
-    threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
-  eigenvalues_test(ptree, 0, &barrier);
-  for (int rank = 0; rank < numthreads - 1; ++rank)
-    threads[rank].join();
+  // for (int rank = 0; rank < numthreads - 1; ++rank)
+    // threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
+  // eigenvalues_test(ptree, 0, &barrier);
+  // for (int rank = 0; rank < numthreads - 1; ++rank)
+    // threads[rank].join();
 
   // matvec_performance_test(ptree);
 
   std::cout << "# " << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
-  // smallest_eigenvalues_convergence_test(ptree);
+  smallest_eigenvalues_convergence_test(ptree);
 
   return 0;
 }
