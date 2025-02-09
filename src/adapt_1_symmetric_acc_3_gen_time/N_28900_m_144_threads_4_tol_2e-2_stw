@@ -1,0 +1,15 @@
+# Hello World! This is dune-eigensolver.
+# hardware number of threads is 128 number of threads used is 4
+# Smallest eigenvalues performance test
+
+### gen: stw
+000 1.255999822201e-07
+001 9.207607595855e-03
+002 9.417916372851e-03
+003 1.515065775237e-02
+004 4.067988344818e-02
+005 6.466335698718e-02
+006 1.007012112734e-01
+007 1.383973221841e-01
+# rank: 0: Eigensolver elapsed time 1.377196980000e-01
+# 8 8
