@@ -582,7 +582,6 @@ void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_c
 
 int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarrier)
 {
-  std::cout << "# Smallest eigenvalues performance test\n";
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
@@ -626,6 +625,7 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     auto time = timer.elapsed();
     if (rank == 0)
     {
+      std::cout << "# Smallest eigenvalues performance test\n";
       std::cout << "\n### " << method << ": " << submethod << '\n';
       for (int i = 0; i < eval.size(); i++)
         std::cout << std::setw(3) << std::setfill('0') << i
@@ -649,12 +649,13 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     pbarrier->wait(rank);
     timer.reset();
 
-    SymmetricStewart(A, shift, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    GeneralizedSymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
 
     pbarrier->wait(rank);
     auto time = timer.elapsed();
     if (rank == 0)
     {
+      std::cout << "# Smallest eigenvalues performance test\n";
       std::cout << "\n### " << method << ": " << submethod << '\n';
       for (int i = 0; i < eval.size(); i++)
         std::cout << std::setw(3) << std::setfill('0') << i
