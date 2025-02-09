@@ -706,6 +706,8 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
   std::string method = ptree.get<std::string>("ev.method");
+  std::string grid = ptree.get<std::string>("ev.grid");
+  int subdomain = ptree.get<int>("ev.subdomain");
   auto A = get_laplacian_dirichlet(N);
   auto B = get_identity(N);
 
@@ -713,13 +715,15 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
   {
     A = get_laplacian_neumann(N);
     B = get_laplacian_B(N, overlap);
+
+    if (grid == "checkerboard")
+    {
+      // B = get_identity(ceil(sqrt(A.N()))); // Standard eigenvalue problem for debugging
+      A = readMatrixFromMatlab("aharmonic_gevp_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
+      B = readMatrixFromMatlab("aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
+      std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
+    }
   }
-  // B = get_identity(ceil(sqrt(A.N())));
-  // A = readMatrixFromMatlab("aharmonic_gevp_Ahat2_subdomain_1.txt");
-  // B = readMatrixFromMatlab("aharmonic_gevp_Bhat2_subdomain_1.txt", A.N());
-  // A = readMatrixFromMatlab("aharmonic_gevp_coordpart_Ahat2_subdomain_0.txt");
-  // B = readMatrixFromMatlab("aharmonic_gevp_coordpart_Bhat2_subdomain_0.txt", A.N());
-  // std::cout << "\n#" << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
 
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
