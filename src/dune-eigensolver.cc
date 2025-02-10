@@ -167,7 +167,7 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_identity(int N)
 /***************************************************
  *
  * Matrix Reader for Matlab matrices of the
- *  checkerboard subdomains.
+ *  checkerboard subdomains, written by Nils Friess
  *
  ***************************************************/
 
@@ -725,6 +725,13 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
       B = readMatrixFromMatlab("./src_dir/checkerboard-gevps/aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
       std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
     }
+    else if (grid == "coord")
+    {
+      A = readMatrixFromMatlab("./src_dir/checkerboard-coords/aharmonic_gevp_coordpart_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
+      B = readMatrixFromMatlab("./src_dir/checkerboard-coords/aharmonic_gevp_coordpart_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
+      std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
+
+    }
   }
 
   using ISTLM = decltype(A);
@@ -932,16 +939,16 @@ int main(int argc, char **argv)
   //  for (int rank = 0; rank < numthreads - 1; ++rank)
   //    threads[rank].join();
 
-  for (int rank = 0; rank < numthreads - 1; ++rank)
-    threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
-  eigenvalues_test(ptree, 0, &barrier);
-  for (int rank = 0; rank < numthreads - 1; ++rank)
-    threads[rank].join();
+  // for (int rank = 0; rank < numthreads - 1; ++rank)
+  //   threads.push_back(std::thread{eigenvalues_test, ptree, rank + 1, &barrier});
+  // eigenvalues_test(ptree, 0, &barrier);
+  // for (int rank = 0; rank < numthreads - 1; ++rank)
+  //   threads[rank].join();
 
   // matvec_performance_test(ptree);
 
   std::cout << "# " << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
-  // smallest_eigenvalues_convergence_test(ptree);
+  smallest_eigenvalues_convergence_test(ptree);
 
   return 0;
 }
