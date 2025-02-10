@@ -1,0 +1,10 @@
+# Hello World! This is dune-eigensolver.
+# hardware number of threads is 128 number of threads used is 1
+# 8 8
+# Smallest eigenvalues convergence test
+
+# nnz: 289744
+# nny: 297600
+# nnz: 91472
+# nny: 297600
+# grid: checkerboard N: 20:    100:    9920
