@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# . runscript 80 8 std stw dir
-size="$1"
-eigenvalues="$2"
-method="$3"
-submethod="$4"
-matrix="$5"
+# . runscript 8 stw 0
+eigenvalues="$1"
+submethod="$2"
+adapt="$3"
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
   SRCPATH=/Users/vsanc/Documents/1UHD/7-wise-22-23/TRYIT/DUNE/dune-eigensolver/src
@@ -21,78 +19,66 @@ cd $BINPATH
 if [[ "$OSTYPE" == "darwin"* ]]; then
   sed -i "" "s/^verbose .*/verbose = 0/" $FILE
 
-  if [[ -n $size ]]; then
-    sed -i "" "s/^N .*/N = $1/" $FILE
-  else
-    echo "Enter the size of problem"
-  fi
-
   if [[ -n $eigenvalues ]]; then
-    sed -i "" "s/^M .*/M = $2/" $FILE
+    sed -i "" "s/^M .*/M = $1/" $FILE
   else
     echo "Enter the number of eigenvalues"
   fi
 
-  if [[ -n $method ]]; then
-    sed -i "" "s/^method .*/method = $3/" $FILE
-  else
-    echo "Enter either std or gen"
-  fi
-
   if [[ -n $submethod ]]; then
-    sed -i "" "s/^submethod .*/submethod = $4/" $FILE
+    sed -i "" "s/^submethod .*/submethod = $2/" $FILE
   else
-    echo "Enter either ftw or stw"
+    echo "Enter either GeneralizedInverse:ftw or GeneralizedSymmetricStewart:stw"
+  fi
+  if [[ -n $adapt ]]; then
+    sed -i "" "s/^adapt .*/adapt = $3/" $FILE
+  else
+    echo "Enter either off:0 or on:1"
   fi
 else
   sed -i "s/^verbose .*/verbose = 0/" $FILE
 
-  if [[ -n $size ]]; then
-    sed -i "s/^N .*/N = $1/" $FILE
-  else
-    echo "Enter the size of problem"
-  fi
-
   if [[ -n $eigenvalues ]]; then
-    sed -i "s/^M .*/M = $2/" $FILE
+    sed -i "s/^M .*/M = $1/" $FILE
   else
     echo "Enter the number of eigenvalues"
   fi
 
-  if [[ -n $method ]]; then
-    sed -i "s/^method .*/method = $3/" $FILE
-  else
-    echo "Enter either std or gen"
-  fi
-
   if [[ -n $submethod ]]; then
-    sed -i "s/^submethod .*/submethod = $4/" $FILE
+    sed -i "s/^submethod .*/submethod = $2/" $FILE
   else
-    echo "Enter either ftw or stw"
+    echo "Enter either GeneralizedInverse:ftw or GeneralizedSymmetricStewart:stw"
+  fi
+  if [[ -n $adapt ]]; then
+    sed -i "s/^adapt .*/adapt = $3/" $FILE
+  else
+    echo "Enter either off:0 or on:1"
   fi
 fi
 
 make dune-eigensolver
-
-N=$((size * size))
-echo "N = $N"
+SUBDOMAIN="1 631 2604 7722 11819 13590"
 ACC="1 2 3 4"
 EXP="1 2 3 4"
 SIG="1 2"
-for acc in $ACC; do
-  for val in $EXP; do
-    for x in $SIG; do
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-      sed -i "" "s/^accurate.*/accurate = "$acc"/" $FILE
-      sed -i "" "s/^tol.*/tol = "$x"e-"$val"/" $FILE
-    else
-      sed -i "s/^accurate.*/accurate = "$acc"/" $FILE
-      sed -i "s/^tol.*/tol = "$x"e-"$val"/" $FILE
-    fi
-      echo "accuracy: "$acc" "$x"e-"$val" $1 $2 $3 $4 $5"
-      LOOPPATH=$SRCPATH/adapt_0_symmetric_gen/N_"$N"_m_"$2"_acc_"$acc"_tol_"$x"e-"$val"_"$3"_"$4"_"$5"
-      [ -f $LOOPPATH ] && rm -f $LOOPPATH
-      ./dune-eigensolver &> $LOOPPATH
+for sub in $SUBDOMAIN; do 
+  for acc in $ACC; do
+    for val in $EXP; do
+      for x in $SIG; do
+      if [[ "$OSTYPE" == "darwin"* ]]; then
+        sed -i "" "s/^subdomain.*/subdomain = "$sub"/" $FILE
+        sed -i "" "s/^accurate.*/accurate = "$acc"/" $FILE
+        sed -i "" "s/^tol.*/tol = "$x"e-"$val"/" $FILE
+      else
+        sed -i "s/^subdomain.*/subdomain = "$sub"/" $FILE
+        sed -i "s/^accurate.*/accurate = "$acc"/" $FILE
+        sed -i "s/^tol.*/tol = "$x"e-"$val"/" $FILE
+      fi
+        echo "$sub" "accuracy: "$acc" "$x"e-"$val" $1 $2 $3"
+        LOOPPATH=$SRCPATH/checkerboard-data/"$2"_adapt_"$3"_domain_"$sub"_m_"$1"_acc_"$acc"_tol_"$x"e-"$val"
+        [ -f $LOOPPATH ] && rm -f $LOOPPATH
+        ./dune-eigensolver &> $LOOPPATH
+      done
     done
   done
 done
