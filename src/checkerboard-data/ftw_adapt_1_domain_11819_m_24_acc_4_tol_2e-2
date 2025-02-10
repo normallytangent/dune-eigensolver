@@ -1,0 +1,30 @@
+# Hello World! This is dune-eigensolver.
+# hardware number of threads is 128 number of threads used is 1
+# 8 8
+# Smallest eigenvalues convergence test
+
+# nnz: 302128
+# nny: 310320
+# nnz: 95376
+# nny: 310320
+# grid: checkerboard N: 20:    102:    10344
+
+#  n: 10344 A.N(): 10344 br: 1
+# GeneralizedInverseAdaptive:  time_total=4.910346e-01 time_factorization=3.019269e-01 iterations=30 outer_iterations=1
+
+# Arpack: time_total=9.682452e-01 iterations=1
+
+# Eigensolver elapsed time 4.915165e-01
+
+# N=10344 M=24 ACCURACY=1.000000e+00 TOL=2.000000e-02 THRESHOLD=9.000000e-02 ESARERROR=1.042573e+05 ARPERROR=2.781397e+02 ESANERROR=0.000000e+00 TIMERATIO=5.076364e-01 \\
+
+### gen: ftw     ARP-SMALL-TOL  ARPACK-TOL  ES-ARP-SMALL  ES-AR ERROR
+000 6.709083e-09 6.421462e-09 6.421462e-09 2.876206e-10 2.876206e-10
+001 7.273267e-01 7.273267e-01 7.273267e-01 2.705706e-10 2.705706e-10
+002 1.068946e+04 1.068946e+04 1.068946e+04 3.985406e-09 3.985406e-09
+003 2.557062e+04 2.557062e+04 2.557062e+04 2.287482e-03 2.287482e-03
+004 3.174756e+04 3.174756e+04 3.174756e+04 2.287466e-03 2.287466e-03
+005 5.359774e+04 5.359774e+04 5.359774e+04 1.207809e-09 1.207809e-09
+006 8.757655e+04 8.729841e+04 8.729841e+04 2.781397e+02 2.781397e+02
+007 1.042576e+05 1.045357e+05 1.045357e+05 2.781397e+02 2.781397e+02
+# printing ends...
