@@ -76,7 +76,7 @@ def plot_frame(ax, status, n, nev, acc, submethod, matrix):
                     itr, time = find_iterations_time(filename)
                     time = '{0:.4g}'.format(float(time))
                     tarry.append(time)
-                    custom_label = y+'e-'+x+', itr: '+str(itr)+' t: '+time
+                    custom_label = y+'e-'+x #+' itr: '+str(itr)+' t: '+time
                     ax.semilogy(dataset[:,1],dataset[:,-2],label=custom_label, marker='')
 
             # Create legend
@@ -204,18 +204,18 @@ def main():
     #  Error in eigenvalues
     #
     ##########################
-    # for n in n_list:
-    #     for acc in acc_list:
-    #         prob = "tol-gen" # "tol-std"
-    #         fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
-    #         plot_frame(ax1, prob, n, nev, acc, 'ftw', matrix)
-    #         plot_frame(ax2, prob, n, nev, acc, 'stw', matrix)
+    for n in n_list:
+        for acc in acc_list:
+            prob = "tol-gen" # "tol-std"
+            fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+            plot_frame(ax1, prob, n, nev, acc, 'ftw', matrix)
+            plot_frame(ax2, prob, n, nev, acc, 'stw', matrix)
 
-    #         title =''#'Accuracy of '+str(nev)+' eigenvalues computed with error tolerances ranging from 2e-1 to 1e-4.\n Convergence governed by the smallest '+str(int(nev * acc/4))+ ' eigenvalues. Problem size: ' +str(n)+', shift: 1e-3, regularization: 0, overlap: 3'
-    #         xlabel='Eigenvalues ordered from smallest to largest'
-    #         ylabel='Error in eigenvalues w.r.t. Arpack\'s solution with error tolerance of 1e-14'
-    #         location='fig/adapt_0_symmetric_'+prob+'-'+matrix+'-n-'+str(n)+'-m-'+str(nev)+'-acc-'+str(acc)+'.pdf'
-    #         beautify(fig,title,xlabel,ylabel,location)
+            title =''#'Accuracy of '+str(nev)+' eigenvalues computed with error tolerances ranging from 2e-1 to 1e-4.\n Convergence governed by the smallest '+str(int(nev * acc/4))+ ' eigenvalues. Problem size: ' +str(n)+', shift: 1e-3, regularization: 0, overlap: 3'
+            xlabel='Eigenvalues ordered from smallest to largest'
+            ylabel='Error in eigenvalues w.r.t. Arpack\'s solution with error tolerance of 1e-14'
+            location='fig/adapt_0_symmetric_'+prob+'-'+matrix+'-n-'+str(n)+'-m-'+str(nev)+'-acc-'+str(acc)+'.pdf'
+            beautify(fig,title,xlabel,ylabel,location)
 
 
     # ##########################
@@ -276,17 +276,17 @@ def main():
     #
     ##########################
     ## CHANGE THE MARKED LINE IN THE FUNCTION BEFORE RUNNING IN (5) LOCATIONS
-    fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True) ## CHANGE1
-    for n in n_list:
-        for acc in acc_list:
-            plot_time(ax1, 'time', n, nev, acc, 'ftw', matrix)
-            plot_time(ax2, 'time', n, nev, acc, 'stw', matrix)
+    # fig, (ax1, ax2) = plt.subplots(1, 2, sharey=True) ## CHANGE1
+    # for n in n_list:
+    #     for acc in acc_list:
+    #         plot_time(ax1, 'time', n, nev, acc, 'ftw', matrix)
+    #         plot_time(ax2, 'time', n, nev, acc, 'stw', matrix)
 
-    title =''#'Runtime comparison Eigensolver given error tolerances \n m:'+str(nev)+', shift: 1e-3, regularization: 0, overlap: 3\n convergence controlled by some smallest eigenvalues'
-    xlabel='Tolerance'
-    ylabel='Iterations per second' ## CHANGE2
-    location='fig/adapt_0_iteration-per-time-gen-'+matrix+'-m-'+str(nev)+'.pdf' ## CHANGE3
-    beautify(fig,title,xlabel,ylabel,location)
+    # title =''#'Runtime comparison Eigensolver given error tolerances \n m:'+str(nev)+', shift: 1e-3, regularization: 0, overlap: 3\n convergence controlled by some smallest eigenvalues'
+    # xlabel='Tolerance'
+    # ylabel='Iterations per second' ## CHANGE2
+    # location='fig/adapt_0_iteration-per-time-gen-'+matrix+'-m-'+str(nev)+'.pdf' ## CHANGE3
+    # beautify(fig,title,xlabel,ylabel,location)
 
 if __name__ == "__main__":
         main()
