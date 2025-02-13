@@ -50,7 +50,7 @@ public:
     n = n_;
     m = m_;
     p = new (std::align_val_t{64}) T[n * m]();
-    std::cout << "  p=" << p << std::endl;
+    // std::cout << "  p=" << p << std::endl;
   }
 
   // copy constructor with deep copy
@@ -126,6 +126,51 @@ public:
     return *this;
   }
 
+  friend MultiVector<T, b> operator-(const MultiVector<T, b>& l, const MultiVector<T, b>& r) 
+  {
+    if (l.rows() != r.rows() || l.cols() != r.cols())
+      throw std::invalid_argument("MultiVector subtraction: length does not match");
+
+    MultiVector<T, b> result(l.rows(), l.cols());
+        
+    for (size_t i = 0; i < l.n * l.m; ++i)
+      result.p[i] = l.p[i] - r.p[i];
+
+    return result;
+  }
+
+  void resize(std::size_t nev) 
+  {
+    // if (nev % b != 0) 
+      // throw std::invalid_argument("Number of columns must be a multiple of block size.");
+
+    if (nev < m) 
+      throw std::invalid_argument("New column count must be greater than the current count.");
+
+    // Allocate new memory with alignment
+    T* q = nullptr;
+    try {
+        q = new (std::align_val_t{64}) T[n * nev]();
+    } catch (...) {
+        throw std::bad_alloc(); // Handle allocation failure
+    }
+
+    // Copy existing data
+    if ( p != nullptr ) 
+    {
+      for (std::size_t i = 0; i < n*m; ++i) 
+          q[i] = p[i];
+
+      // Update column count
+      m = nev;
+
+      // Free old memory
+      delete[] p;
+    }
+    // Steal new pointer
+    p = q; // steal pointer
+  }
+
   //! array access
   T &operator()(std::size_t i, std::size_t j)
   {
@@ -135,6 +180,7 @@ public:
   //! const array access
   const T &operator()(std::size_t i, std::size_t j) const
   {
+    // std::cout << ((j / blocksize) * n + i) * blocksize + (j % blocksize) << std::endl;
     return p[((j / blocksize) * n + i) * blocksize + (j % blocksize)];
   }
 
@@ -215,7 +261,7 @@ void show(double* p, int n, int m)
           << std::scientific
           << std::showpoint
           << std::setprecision(4)
-          << p[i*m+j]; // row major access
+          << p[i+j*m]; // column major access: unroll it the same it's stored
     std::cout << std::endl;
   }
 }

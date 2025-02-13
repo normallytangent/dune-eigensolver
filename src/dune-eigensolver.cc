@@ -17,6 +17,7 @@
 #include <thread>
 #include <mutex>
 #include <condition_variable>
+#include <typeinfo>
 
 // dune-common includes
 #include <dune/common/parallel/mpihelper.hh> // An initializer of MPI
@@ -27,12 +28,19 @@
 #include <dune/istl/preconditioners.hh>
 #include <dune/istl/paamg/amg.hh>
 #include <dune/istl/paamg/pinfo.hh>
-#include <dune/istl/umfpack.hh>
+//#include <dune/istl/umfpack.hh>
 #include <dune/istl/cholmod.hh>
 #include <dune/istl/test/laplacian.hh>
 #include <dune/istl/io.hh>
+#include <dune/istl/eigenvalue/arpackpp.hh>
 // eigensolver includes
 #include "../dune/eigensolver/eigensolver.hh"
+#include "../dune/eigensolver/qr.hh"
+#include "../dune/eigensolver/symmetric_stewart.hh"
+// #include "../dune/eigensolver/nonsymmetric_stewart.hh"
+// #include "../dune/eigensolver/nonsym_test.hh"
+
+#include "../dune/eigensolver/arpack_wrapper.hh"
 
 // global lock
 double global_value;     // result
@@ -88,16 +96,18 @@ public:
   }
 };
 
+/***************************************************
+ *
+ * Define some example matrices for the laplacian 
+ * with different boundary conditions. 
+ *
+ ***************************************************/
 
-//================================
-// Set up laplacian matricies with
-// various boundary conditions.
-//================================
-
- //// @NOTE Simulates the discretized meshes
+ // Simulates the discretized meshes
 Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_laplacian_dirichlet(int N)
 {
   Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> A;
+  int dummy = 0;
   setupLaplacian(A, N);
   return A;
 }
@@ -120,7 +130,6 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_laplacian_neumann(int N)
   return A;
 }
 
-// @NOTE Don't understand what or how this works
 Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_laplacian_B(int N, int overlap)
 {
   Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> A;
@@ -149,7 +158,7 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_identity(int N)
   for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
     for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
       if (row_iter.index() == col_iter.index())
-        (*col_iter)[0][0] = 1.0;
+        (*col_iter)[0][0] = 1.0; // scaled the problem to check the type of tolerance(relative or absolute, if former, the error would have scaled by 10 as well!) (*col_iter)*10.0;
       else
         (*col_iter)[0][0] = 0.0;
   return A;
@@ -157,7 +166,86 @@ Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> get_identity(int N)
 
 /***************************************************
  *
- * do performance tests for Gram-Schmidt and Matmul
+ * Matrix Reader for Matlab matrices of the
+ *  checkerboard subdomains, written by Nils Friess
+ *
+ ***************************************************/
+
+Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>> readMatrixFromMatlab(std::string filename, int n = -1) {
+  if (n < 0) {
+    // Use last line in the file to determine the size
+    // https://stackoverflow.com/questions/11876290/c-fastest-way-to-read-only-last-line-of-text-file
+    // seekg returns a pointer
+    // peek returns the next character
+    // tellg returns the current position of the get pointer 
+    std::ifstream file;
+    file.open(filename);
+    if (file.is_open()) {
+      file.seekg(-1, std::ios_base::end);
+      if (file.peek() == '\n') {
+        // Start searching for \n occurrences
+        file.seekg(-1, std::ios_base::cur);
+        for (int i = file.tellg(); i > 0; i--) {
+          if (file.peek() == '\n') {
+            // Found
+            file.get();
+            break;
+          }
+          // Move one character back
+          file.seekg(i, std::ios_base::beg);
+        }
+      }
+
+      std::string lastline;
+      getline(file, lastline, ' ');
+      n = std::stoi(lastline);
+      file.close();
+    } else {
+      DUNE_THROW(Dune::Exception, "Could not open file");
+    }
+  }
+
+  std::ifstream file(filename);
+  auto nnz = std::count(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>(), '\n');
+  std::cout << "\n# nnz: " << nnz;
+  auto nny = n * 30;
+  std::cout << "\n# nny: " << nny;
+  file.seekg(0, std::ios_base::beg);
+
+  using Mat = Dune::BCRSMatrix<Dune::FieldMatrix<double, 1, 1>>;
+  Mat A(n, n, nnz, Mat::row_wise);
+
+  std::size_t i, j;
+  double entry;
+
+  auto row = A.createbegin();
+  while (file >> i >> j >> entry) {
+    // First check if the current row in the file differs from the current row iterator
+    // If yes, we inrease the row iterator until it matches
+    while (row.index() != i - 1)
+      ++row;
+
+    row.insert(j - 1);
+  }
+
+  // Increment iterator until the end to force build stage to be set to `built`
+  while (row != A.createend())
+    ++row;
+
+  A = 0;
+  file.close();
+  file.open(filename);
+  while (file >> i >> j >> entry) {
+    A[i - 1][j - 1] = entry;
+  }
+
+  return A;
+}
+
+
+/***************************************************
+ *
+ * Do performance tests for Gram-Schmidt and Matmul
  *
  ***************************************************/
 // @NOTE Focus on this test for comparison of the vanilla with AVX2
@@ -258,35 +346,6 @@ void mgs_performance_test(const Dune::ParameterTree &ptree, int rank, Barrier *p
   }
 #endif
 
-#ifdef NEONINCLUDE
-  double time3;
-  if (rank == 0)
-    std::cout << "start test VECTORIZED block mgs version (neon version)" << std::endl;
-  {
-    // allocate the matrix
-    using MV = MultiVector<double, b>;
-    MV Q{n, m};
-
-    // fill the Q matrix with random numbers
-    auto const seed = 123;
-    std::mt19937 urbg{seed};
-    std::normal_distribution<double> generator{0.0, 1.0};
-    for (std::size_t bj = 0; bj < Q.cols(); bj += MV::blocksize)
-      for (std::size_t i = 0; i < Q.rows(); ++i)
-        for (std::size_t j = 0; j < MV::blocksize; ++j)
-          Q(i, bj + j) = generator(urbg);
-
-    // run test
-    pbarrier->wait(rank);
-    timer.reset();
-    std::vector<double> dp;
-    for (int iter = 0; iter < n_iter; iter++)
-      orthonormalize_neon_b8_v2(Q);
-    pbarrier->wait(rank);
-    time3 = timer.elapsed();
-  }
-#endif
-
   if (rank == 0)
   {
     double flops = pbarrier->nthreads() * n_iter * flops_orthonormalize(n, m);
@@ -310,130 +369,108 @@ void mgs_performance_test(const Dune::ParameterTree &ptree, int rank, Barrier *p
   return;
 }
 
-// @NOTE Implement this without islands matrix. Would be nice to see what 
 // percentage of the performance or time is spent in matrix vector multiplications
-//int matvec_performance_test(const Dune::ParameterTree &ptree)
-//{
-//  try
-//  {
-//    auto istlA = get_islands_matrix(ptree);
-//
-//    std::size_t n = istlA.N();
-//    std::size_t nnz = istlA.nonzeroes();
-//    std::cout << "n=" << n << " nnz=" << nnz << std::endl;
-//
-//    std::size_t n_iter = ptree.get<std::size_t>("mv.n_iter"); // number of iterations for test
-//    std::size_t n_vectors = ptree.get<std::size_t>("mv.m");
-//    const std::size_t block_size = 8;
-//
-//    MultiVector<double, block_size> M1{n, n_vectors};
-//    MultiVector<double, block_size> M2{n, n_vectors};
-//
-//    Dune::Timer timer;
-//
-//    auto const seed = 123;
-//    std::mt19937 urbg{seed};
-//    std::normal_distribution<double> generator{0.0, 1.0};
-//    for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//      for (std::size_t i = 0; i < M1.rows(); ++i)
-//        for (std::size_t j = 0; j < block_size; ++j)
-//          M1(i, bj + j) = generator(urbg);
-//
-//    // first version: naive matrix vector multiplication
-//    std::cout << "mv naive version" << std::endl;
-//    {
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_naive(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT naive " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//
-//    // second version: multiple rhs matrix vector multiplication
-//    std::cout << "mv block version" << std::endl;
-//    {
-//      for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//        for (std::size_t i = 0; i < M1.rows(); ++i)
-//          for (std::size_t j = 0; j < block_size; ++j)
-//            M1(i, bj + j) = generator(urbg);
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_blocked(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT blocked " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//
-//#ifdef VCINCLUDE
-//    // third version: multiple rhs matrix vector multiplication
-//    std::cout << "mv vectorized block version (Intel version)" << std::endl;
-//    {
-//      for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//        for (std::size_t i = 0; i < M1.rows(); ++i)
-//          for (std::size_t j = 0; j < block_size; ++j)
-//            M1(i, bj + j) = generator(urbg);
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_avx2_b8(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT avx2 " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//#endif
-//
-//#ifdef NEONINCLUDE
-//    // fourth version: multiple rhs matrix vector multiplication vectorized for arm
-//    std::cout << "mv vectorized block version (arm version)" << std::endl;
-//    {
-//      for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
-//        for (std::size_t i = 0; i < M1.rows(); ++i)
-//          for (std::size_t j = 0; j < block_size; ++j)
-//            M1(i, bj + j) = generator(urbg);
-//      timer.reset();
-//      for (int k = 0; k < n_iter; k++)
-//      {
-//        matmul_sparse_tallskinny_neon_b8(M2, istlA, M1);
-//        std::swap(M1, M2);
-//      }
-//      auto time1 = timer.elapsed();
-//      std::cout << "elapsed time = " << time1 << std::endl;
-//      double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
-//      std::cout << "RESULT neon " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
-//    }
-//#endif
-//  }
-//  catch (Dune::Exception &e)
-//  {
-//    std::cerr << "Dune reported error: " << e << std::endl;
-//  }
-//  catch (...)
-//  {
-//    std::cerr << "Unknown exception thrown!" << std::endl;
-//  }
-//  return 0;
-//}
+int matvec_performance_test(const Dune::ParameterTree &ptree)
+{
+ try
+ {
+   int N = ptree.get<int>("mv.N");
+   auto istlA = get_laplacian_dirichlet(N);
+
+   std::size_t n = istlA.N();
+   std::size_t nnz = istlA.nonzeroes();
+   std::cout << "n=" << n << " nnz=" << nnz << std::endl;
+
+   std::size_t n_iter = ptree.get<std::size_t>("mv.n_iter"); // number of iterations for test
+   std::size_t n_vectors = ptree.get<std::size_t>("mv.m");
+   const std::size_t block_size = 8;
+
+   MultiVector<double, block_size> M1{n, n_vectors};
+   MultiVector<double, block_size> M2{n, n_vectors};
+
+   Dune::Timer timer;
+
+   auto const seed = 123;
+   std::mt19937 urbg{seed};
+   std::normal_distribution<double> generator{0.0, 1.0};
+   for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
+     for (std::size_t i = 0; i < M1.rows(); ++i)
+       for (std::size_t j = 0; j < block_size; ++j)
+         M1(i, bj + j) = generator(urbg);
+
+   // first version: naive matrix vector multiplication
+   std::cout << "mv naive version" << std::endl;
+   {
+     timer.reset();
+     for (int k = 0; k < n_iter; k++)
+     {
+       matmul_sparse_tallskinny_naive(M2, istlA, M1);
+       std::swap(M1, M2);
+     }
+     auto time1 = timer.elapsed();
+     std::cout << "elapsed time = " << time1 << std::endl;
+     double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
+     std::cout << "RESULT naive " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
+   }
+
+   // second version: multiple rhs matrix vector multiplication
+   std::cout << "mv block version" << std::endl;
+   {
+     for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
+       for (std::size_t i = 0; i < M1.rows(); ++i)
+         for (std::size_t j = 0; j < block_size; ++j)
+           M1(i, bj + j) = generator(urbg);
+     timer.reset();
+     for (int k = 0; k < n_iter; k++)
+     {
+       matmul_sparse_tallskinny_blocked(M2, istlA, M1);
+       std::swap(M1, M2);
+     }
+     auto time1 = timer.elapsed();
+     std::cout << "elapsed time = " << time1 << std::endl;
+     double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
+     std::cout << "RESULT blocked " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
+   }
+
+#ifdef VCINCLUDE
+   // third version: multiple rhs matrix vector multiplication
+   std::cout << "mv vectorized block version (Intel version)" << std::endl;
+   {
+     for (std::size_t bj = 0; bj < M1.cols(); bj += block_size)
+       for (std::size_t i = 0; i < M1.rows(); ++i)
+         for (std::size_t j = 0; j < block_size; ++j)
+           M1(i, bj + j) = generator(urbg);
+     timer.reset();
+     for (int k = 0; k < n_iter; k++)
+     {
+       matmul_sparse_tallskinny_avx2_b8(M2, istlA, M1);
+       std::swap(M1, M2);
+     }
+     auto time1 = timer.elapsed();
+     std::cout << "elapsed time = " << time1 << std::endl;
+     double flops = 2.0 * n_iter * n_vectors * istlA.nonzeroes();
+     std::cout << "RESULT avx2 " << n << " " << nnz << " " << n_vectors << " " << flops * 1e-9 / time1 << std::endl;
+   }
+#endif
+ }
+ catch (Dune::Exception &e)
+ {
+   std::cerr << "Dune reported error: " << e << std::endl;
+ }
+ catch (...)
+ {
+   std::cerr << "Unknown exception thrown!" << std::endl;
+ }
+ return 0;
+}
 
 /***************************************************
  *
- * a first eigenvalue solver
+ * A first eigenvalue solver
  *
  ***************************************************/
 
-// returns a vector filled with all eigenvalues sorted in increasing size
-// line 555 can be used to compare to the discreized solution
+// Returns a vector filled with all eigenvalues sorted in increasing size
 std::vector<double> eigenvalues_laplace_dirichlet_2d(std::size_t N)
 {
   std::vector<double> ev(N * N);
@@ -445,34 +482,135 @@ std::vector<double> eigenvalues_laplace_dirichlet_2d(std::size_t N)
   return ev;
 }
 
+// Placeholder function. Needs figuring out the correct analytical solution to the neumann boundary value problem.
+std::vector<double> eigenvalues_laplace_neumann_2d(int N)
+{
+  std::vector<double> ev(N * N);
+  double h = 1 / (N + 1.0);
+  for (std::size_t i = 0; i < N; ++i)
+    for (std::size_t j = 0; j < N; ++j)
+      ev[j * N + i] = 8.0 * (std::cosh(h * (i + 1) * M_PI) * std::cosh(h * (i + 1) * M_PI) + std::cosh(h * (j + 1) * M_PI) * std::cosh(h * (j + 1) * M_PI));
+
+  std::sort(ev.begin(), ev.end());
+  return ev;
+}
+
+/** \brief Calculate and print the residual of errors sampled in steps of ten.
+* Rel = (computed_val - true_val) / true_val
+*/
+void RelativeResidual(std::vector<double> &eval,std::vector<double> &evalstop , std::vector<double> &true_eval)
+{
+  std::cout << std::endl;
+  double reltolev = 0;
+  double reltolevs = 0;
+  for (int i = 0; i < eval.size(); i++){
+
+    reltolev = ( eval[i] - true_eval[true_eval.size()-i-1] ) / true_eval[true_eval.size()-i-1];
+    reltolevs = ( evalstop[i] - true_eval[true_eval.size()-i-1] ) / true_eval[true_eval.size()-i-1];
+
+    if(i%10==0){
+      std::cout << std::setw(16)
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(1)
+                << abs(reltolev) << "   " << abs(reltolevs) << std::endl;
+    }
+  }
+}
+
+template <typename ISTLM>
+void unshift_matrix(ISTLM &A, double shift)
+{
+  if (shift != 0)
+  {
+    for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
+      for (auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
+        if (row_iter.index() == col_iter.index())
+          for (int i = 0; i < ISTLM::block_type::rows; i++)
+            (*col_iter)[i][i] -= shift;
+  }
+}
+
+template <typename VEC>
+void printer(const VEC &self_eval, const VEC &compare_eval, const VEC &precise_compare_eval, const std::string method, const std::string submethod)
+{
+  if (method == "std")
+  {
+    std::cout << "\n### " << method << ": " << submethod << "    "
+                       << " ANALYTICAL"    << " "
+                       << " ARP-SMALL-TOL" << " "
+                       << " ES-ARP-SMALL"  << " "
+                       << " ES-AN ERROR"
+                       << std::endl;
+    for (int i = 0; i < self_eval.size(); i++)
+      std::cout << std::setw(3) << std::setfill('0') << i
+                << " "
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << self_eval[i] << " "
+                << compare_eval[i] << " "
+                << precise_compare_eval[i] << " "
+                << std::abs(self_eval[i] - precise_compare_eval[i]) << " "
+                << std::abs(self_eval[i] - compare_eval[i])
+                << std::endl;
+  }
+  else if (method == "gen")
+  {
+    std::cout << "\n### " << method << ": " << submethod << "    "
+                       << " ARP-SMALL-TOL" << " "
+                       << " ARPACK-TOL"    << " "
+                       << " ES-ARP-SMALL"   << " "
+                       << " ES-AR ERROR"
+                      << std::endl;
+    for (int i = 0; i < self_eval.size(); i++)
+      std::cout << std::setw(3) << std::setfill('0') << i
+                << " "
+                << std::scientific
+                << std::showpoint
+                << std::setprecision(6)
+                << self_eval[i] << " "
+                << precise_compare_eval[i] << " "
+                << compare_eval[i] << " "
+                << std::abs(self_eval[i] - precise_compare_eval[i]) << " "
+                << std::abs(self_eval[i] - compare_eval[i])
+                << std::endl;
+    std::cout << "# printing ends...\n";
+
+  }
+}
+
 int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarrier)
 {
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  // auto A = get_islands_matrix(ptree);
-  // auto A = get_laplacian_dirichlet(N);
   auto A = get_laplacian_neumann(N);
   auto B = get_laplacian_B(N, overlap);
-  // auto B = get_identity(N);
+
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
-  // Dune::printmatrix(std::cout, A, "A", "");
-  // Dune::printmatrix(std::cout, B, "B", "");
 
   // obtain more parameters
   std::size_t br = block_type::rows;
   std::size_t bc = block_type::cols;
   std::size_t n = A.N() * br;
-  int m = ptree.get<int>("ev.m");
+  int m = ptree.get<int>("ev.M");
   int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
   double shift = ptree.get<double>("ev.shift");
   double regularization = ptree.get<double>("ev.regularization");
+  int accurate = ptree.get<double>("ev.accurate");
   double tol = ptree.get<double>("ev.tol");
   int verbose = ptree.get<int>("ev.verbose");
+  unsigned int seed = ptree.get<unsigned int>("ev.seed");
   std::string method = ptree.get<std::string>("ev.method");
+  std::string submethod = ptree.get<std::string>("ev.submethod");
+  double threshold = ptree.get<double>("ev.threshold");
+  int stopperswitch = ptree.get<int>("ev.stop");
 
-  if (method == "raes")
+  double accuracy = (double)accurate/4.0;
+
+  if (submethod == "ftw")
   {
     std::vector<double> eval(m);
     std::vector<std::vector<double>> evec(m);
@@ -481,25 +619,60 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     Dune::Timer timer;
     pbarrier->wait(rank);
     timer.reset();
-    GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose);
-    // StandardInverse(A,shift,tol,maxiter,m,eval,evec,verbose);
+
+    // GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    GeneralizedInverseAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+
     pbarrier->wait(rank);
     auto time = timer.elapsed();
     if (rank == 0)
     {
+      std::cout << "# Smallest eigenvalues performance test\n";
+      std::cout << "\n### " << method << ": " << submethod << '\n';
       for (int i = 0; i < eval.size(); i++)
-        std::cout << "eval[" << std::setw(3) << i << "]="
-                  << std::setw(20)
+        std::cout << std::setw(3) << std::setfill('0') << i
+                  << " "
                   << std::scientific
                   << std::showpoint
                   << std::setprecision(12)
                   << eval[i]
                   << std::endl;
-      std::cout << rank << ": eigensolver elapsed time " << time << std::endl;
+      std::cout << "# rank: " << rank << ": Eigensolver elapsed time " << time << std::endl;
     }
   }
 
-  if (method == "arpack" && rank == 0)
+  if (submethod == "stw")
+  {
+    std::vector<double> eval(m);
+    std::vector<std::vector<double>> evec(m);
+    for (auto &v : evec)
+      v.resize(n);
+    Dune::Timer timer;
+    pbarrier->wait(rank);
+    timer.reset();
+
+    // GeneralizedSymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+    GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+
+    pbarrier->wait(rank);
+    auto time = timer.elapsed();
+    if (rank == 0)
+    {
+      std::cout << "# Smallest eigenvalues performance test\n";
+      std::cout << "\n### " << method << ": " << submethod << '\n';
+      for (int i = 0; i < eval.size(); i++)
+        std::cout << std::setw(3) << std::setfill('0') << i
+                  << " "
+                  << std::scientific
+                  << std::showpoint
+                  << std::setprecision(12)
+                  << eval[i]
+                  << std::endl;
+      std::cout << "# rank: " << rank << ": Eigensolver elapsed time " << time << std::endl;
+    }
+  }
+
+  if (submethod == "arpack" && rank == 0)
   {
     using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
     ISTLV vec(A.N());
@@ -508,18 +681,20 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
     std::vector<double> eigenvalues(m, 0.0);
     Dune::Timer timer;
     timer.reset();
-    ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
-    arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues, -shift);
+    ArpackEigensolver::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
+    // arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues, shift);
+    arpack.computeGenSymShiftInvertMinMagnitudeAdaptive(B, 1e-14, eigenvectors, eigenvalues, shift, threshold, m);
     auto time = timer.elapsed();
+    std::cout << "\n### " << method << ": " << submethod << '\n';
     for (int i = 0; i < eigenvalues.size(); i++)
-      std::cout << "eval[" << std::setw(3) << i << "]="
-                << std::setw(20)
+      std::cout << std::setw(3) << std::setfill('0') << i
+                << " "
                 << std::scientific
                 << std::showpoint
                 << std::setprecision(12)
                 << eigenvalues[i]
                 << std::endl;
-    std::cout << rank << ": arpack elapsed time " << time << std::endl;
+    std::cout << "# rank: " << rank << ": Arpack elapsed time " << time << std::endl;
   }
   return 0;
 }
@@ -528,203 +703,201 @@ int eigenvalues_test(const Dune::ParameterTree &ptree, int rank, Barrier *pbarri
 int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 
 {
+  std::cout << "# Smallest eigenvalues convergence test\n";
   // set up matrix
   int N = ptree.get<int>("ev.N");
   int overlap = ptree.get<int>("ev.overlap");
-  // auto A = get_islands_matrix(ptree);
-  // auto A = get_laplacian_dirichlet(N);
-  auto A = get_laplacian_neumann(N);
-  auto B = get_laplacian_B(N, overlap);
-  // auto B = get_identity(N);
+  std::string method = ptree.get<std::string>("ev.method");
+  std::string grid = ptree.get<std::string>("ev.grid");
+  int subdomain = ptree.get<int>("ev.subdomain");
+  auto A = get_laplacian_dirichlet(N);
+  auto B = get_identity(N);
+
+  if (method == "gen")
+  {
+    A = get_laplacian_neumann(N);
+    B = get_laplacian_B(N, overlap);
+
+    if (grid == "checkerboard")
+    {
+      // B = get_identity(ceil(sqrt(A.N()))); // Standard eigenvalue problem for debugging
+      A = readMatrixFromMatlab("./src_dir/sampler/matrices/checkerboard-gevps/aharmonic_gevp_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
+      B = readMatrixFromMatlab("./src_dir/sampler/matrices/checkerboard-gevps/aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
+      std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
+    }
+    else if (grid == "coord")
+    {
+      A = readMatrixFromMatlab("./src_dir/checkerboard-coords/aharmonic_gevp_coordpart_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
+      B = readMatrixFromMatlab("./src_dir/checkerboard-coords/aharmonic_gevp_coordpart_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
+      std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
+
+    }
+  }
+
   using ISTLM = decltype(A);
   using block_type = typename ISTLM::block_type;
-  // Dune::printmatrix(std::cout, A, "A", "");
-  // @NOTE WHY IS B MATRIX ZERO?
-  // Dune::printmatrix(std::cout, B, "B", "");
+  // Dune::printmatrix(std::cout, A, "Unchanged A:", "");
+  // Dune::printmatrix(std::cout, B, "Unchanged B:", "");
 
   // obtain more parameters
   std::size_t br = block_type::rows;
   std::size_t bc = block_type::cols;
   std::size_t n = A.N() * br;
-  int m = ptree.get<int>("ev.m");
+  std::cout << "\n# " << " n: " << n << " A.N(): " << A.N() << " br: " << br << '\n';
+  int m = ptree.get<int>("ev.M");
   int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
   double shift = ptree.get<double>("ev.shift");
   double regularization = ptree.get<double>("ev.regularization");
+  int accurate = ptree.get<int>("ev.accurate");
   double tol = ptree.get<double>("ev.tol");
+  double threshold = ptree.get<double>("ev.threshold");
   int verbose = ptree.get<int>("ev.verbose");
   unsigned int seed = ptree.get<unsigned int>("ev.seed");
-  std::string method = ptree.get<std::string>("ev.method");
+  std::string submethod = ptree.get<std::string>("ev.submethod");
+  bool adapt = ptree.get<bool>("ev.adapt");
+  bool symmetric = ptree.get<bool>("ev.symmetric");
+  int stopperswitch = ptree.get<int>("ev.stop");
+
+  // compile time check only :(
+  // if (accurate < 1 || 4 < accurate)
+  //   throw std::invalid_argument("Number of accurate eigenvalues is not in the requested range!");
+  double accuracy = (double)accurate/4.0;
 
   // first compute eigenvalues with arpack to great accuracy
-  std::vector<double> eigenvalues_arpack(m, 0.0);
+  std::vector<double> eigenvalues_arpack(m, 0.0), eigenvalues_arpack2(m, 0.0);
   using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
-  ISTLV vec(A.N());
+  ISTLV vec(n); // vec(A.N());
   vec = 0.0;
-  std::vector<ISTLV> eigenvectors(m, vec);
-  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
-  arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
+  std::vector<ISTLV> eigenvectors(m, vec), eigenvectors2(m ,vec);
+  ArpackEigensolver::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A, maxiter, verbose);
+  if ( method == "gen" && adapt)
+  {
+    arpack.computeGenSymShiftInvertMinMagnitudeAdaptive(B, 1e-14, eigenvectors, eigenvalues_arpack, shift, threshold, m);
+  }
+  else if (method == "gen" && !adapt)
+  {
+    arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
+  }
+  else if (method == "std")
+  {
+    arpack.computeStdSymMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, shift);
+  }
 
-  // now compute eigenvalues with given tolerance in arpack
-  std::vector<double> eigenvalues_arpack2(m, 0.0);
   Dune::Timer timer_arpack;
   timer_arpack.reset();
-  arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
+  if (method == "gen" && adapt)
+  {
+    arpack.computeGenSymShiftInvertMinMagnitudeAdaptive(B, tol, eigenvectors2, eigenvalues_arpack2, shift, threshold, m);
+  }
+  else if (method == "gen" && !adapt)
+  {
+    arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
+  }
+  else if (method == "std")
+  {
+     arpack.computeStdSymMinMagnitude(B, tol, eigenvectors2, eigenvalues_arpack2, shift);
+  }
   auto time_arpack = timer_arpack.elapsed();
   auto arpackIterations = arpack.getIterationCount();
-  std::cout << ": arpack elapsed time " << time_arpack << std::endl;
-  double maxerror2 = 0.0;
-  for (int i = 0; i < m; i++)
-    maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
+
+  // Then compute the smallest eigenvalue with ISTL's arpack wrapper
+  // ISTLM  control_(A);
+  // Dune::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arp(control_.axpy(shift,B));
+  // double w = 0.0;
+  // arp.computeSymMinMagnitude(tol,vec,w);
+  // std::cout << "# Smallest eigenvalue from Arpack: " << std::scientific << w-shift << std::endl;
+  // std::cout << std::scientific<< std::endl;
 
   // next compute eigenvalues with given tolerance in eigensolver
-  std::vector<double> eval(m);
-  std::vector<std::vector<double>> evec(m);
+  using VEC = std::vector<double>;
+  VEC eval(m,0.0);
+  std::vector<VEC> evec(m);
   for (auto &v : evec)
     v.resize(n);
+
+  // Finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically
+  std::vector<double> eigenvalues_analytical(N, 0.0);
+  eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(N);
+
+  // Add computation of the smallest eigenvalues with the new stopping criterion here
+  // std::vector<double> evalstop(m, 0.0);
+  // std::vector<std::vector<double>> evecstop(m);
+  // for (auto &v : evecstop)
+    // v.resize(n);
+
   Dune::Timer timer_eigensolver;
   timer_eigensolver.reset();
-  GeneralizedInverse(A, B, shift, regularization, tol, maxiter, m, eval, evec, verbose, seed);
-  auto time_eigensolver = timer_eigensolver.elapsed();
-  for (int i = 0; i < eval.size(); i++)
-    std::cout << "eval[" << std::setw(3) << i << "]="
-              << std::setw(10)
-              << std::scientific
-              << std::showpoint
-              << std::setprecision(2)
-              << eval[i]
-              << " "
-              << std::abs(eval[i] - eigenvalues_arpack2[i]) // @NOTE Shouldn't eval be compared
-                                                            // to eigenvalues_arpack2 instead?
-                                                            // They are both calculated for a given
-                                                            // tolerance.
-              << std::endl;
-  std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
-  double maxerror = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack2[i])); // @NOTE Same comment
-                                                                               // as above.
-  std::cout << "N_M_TOL_RASERROR_ARPERROR_TIMERATIO_ARPACKITER "
-            << n << " & "
-            << m << " & "
-            << tol << " & "
-            << maxerror << " & "
-            << maxerror2 << " & "
-            << time_eigensolver / time_arpack << " & "
-            << arpackIterations << " \\\\"
-            << std::endl;
-
-  return 0;
-}
-
-// this must be called sequentially
-int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
-
-{
-  // set up matrix
-  int N = ptree.get<int>("ev.N");
-  int overlap = ptree.get<int>("ev.overlap");
-  // auto A = get_islands_matrix(ptree);
-  auto A = get_laplacian_dirichlet(N);
-  // auto A = get_laplacian_neumann(N);
-  // auto B = get_laplacian_B(N, overlap);
-   auto B = get_identity(N);
-  using ISTLM = decltype(A);
-  using block_type = typename ISTLM::block_type;
-  // Dune::printmatrix(std::cout, A, "A", "");
-  // @NOTE WHY IS B MATRIX ZERO?
-  // Dune::printmatrix(std::cout, B, "B", "");
-
-  // obtain more parameters
-  std::size_t br = block_type::rows;
-  std::size_t bc = block_type::cols;
-  std::size_t n = A.N() * br;
-  int m = ptree.get<int>("ev.m");
-  int maxiter = ptree.get<int>("ev.maxiter"); // number of iterations for test
-  double shift = 0;  // ptree.get<double>("ev.shift");
-  double regularization = ptree.get<double>("ev.regularization");
-  double tol = ptree.get<double>("ev.tol");
-  int verbose = ptree.get<int>("ev.verbose");
-  unsigned int seed = ptree.get<unsigned int>("ev.seed");
-  std::string method = ptree.get<std::string>("ev.method");
-
-  // first compute eigenvalues with arpack to great accuracy
-  std::vector<double> eigenvalues_arpack(m, 0.0);
-  using ISTLV = Dune::BlockVector<Dune::FieldVector<double, block_type::rows>>;
-  ISTLV vec(A.N());
-  vec = 0.0;
-  std::vector<ISTLV> eigenvectors(m, vec);
-  ArpackMLGeneo::ArPackPlusPlus_Algorithms<ISTLM, ISTLV> arpack(A);
-  arpack.computeGenSymShiftInvertMinMagnitude(B, 1e-14, eigenvectors, eigenvalues_arpack, -shift);
-
-  // now compute eigenvalues with given tolerance in arpack
-  std::vector<double> eigenvalues_arpack2(m, 0.0);
-  Dune::Timer timer_arpack;
-  timer_arpack.reset();
-  arpack.computeGenSymShiftInvertMinMagnitude(B, tol, eigenvectors, eigenvalues_arpack2, -shift);
-  auto time_arpack = timer_arpack.elapsed();
-  auto arpackIterations = arpack.getIterationCount();
-  std::cout << ": arpack elapsed time " << time_arpack << std::endl;
-  double maxerror2 = 0.0;
-  for (int i = 0; i < m; i++)
-    maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
-
-  // next compute eigenvalues with given tolerance in eigensolver
-  std::vector<double> eval(m, 0.0); 
-  std::vector<std::vector<double>> evec(m);
-  for (auto &v : evec)
-    v.resize(n);
-  Dune::Timer timer_eigensolver;
-  timer_eigensolver.reset();
-  StandardLargest(A, shift, tol, maxiter, m, eval, evec, verbose, seed);
+  if (method == "gen" && submethod == "stw" && adapt)
+  {
+    if (symmetric)
+      GeneralizedSymmetricStewartAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+    // else
+      // GeneralizedNonsymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+      // GeneralizedLOPSI(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
+  else if (method == "gen" && submethod == "stw" && !adapt)
+  {
+    GeneralizedSymmetricStewart(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
+  else if (method == "gen" && submethod == "ftw" && adapt)
+  {
+    GeneralizedInverseAdaptive(A, B, shift, regularization, accuracy, tol, threshold, maxiter, m, eval, evec, verbose, seed);
+  } 
+  else if (method == "gen" && submethod == "ftw" && !adapt)
+  {
+    GeneralizedInverse(A, B, shift, regularization, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  } 
+  else if (method == "std" && submethod == "stw")
+  {
+    SymmetricStewart(A, shift, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
+  if (method == "std" && submethod == "ftw")
+  {
+    StandardInverse(A, shift, accuracy, tol, maxiter, m, eval, evec, verbose, seed, stopperswitch);
+  }
   auto time_eigensolver = timer_eigensolver.elapsed();
 
-   // finally compute eigenvalues for the 2d laplacian with dirichlet b.c.s. analytically 
-   std::vector<double> eigenvalues_analytical(m, 0.0);
-   eigenvalues_analytical = eigenvalues_laplace_dirichlet_2d(m);
-   double maxerror3 = 0.0;
-   for (int i = 0; i < m; ++i)
-     maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
+  if (verbose > -1)
+  {
+    // printer
+    double maxerror = 0.0;
+    for (int i = 0; i < std::min(eval.size(), (std::size_t) m); i++)
+      maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i]));
 
-  // printer
-  std::cout << "eval_num__EIGENSOLVER_ANALYTICAL_ARPACKACR_ARPACKTOL_ESANERROR_ESARERR" << std::endl;
-  for (int i = 0; i < eval.size(); i++)
-    std::cout << "eval[" << std::setw(3) << i << "]="
-              << std::setw(10)
+    double maxerror2 = 0.0;
+    for (int i = 0; i < std::min(eval.size(), (std::size_t) m); i++)
+      maxerror2 = std::max(maxerror2, std::abs(eigenvalues_arpack2[i] - eigenvalues_arpack[i]));
+
+    double maxerror3 = 0.0;
+    for (int i = 0; i < std::min(eval.size(), (std::size_t) m); ++i)
+      maxerror3 = std::max(maxerror3, std::abs(eval[i]-eigenvalues_analytical[i]));
+
+    std::cout << "\n# Arpack: time_total=" << time_arpack << " iterations=" << arpackIterations << std::endl;
+    std::cout << "\n# Eigensolver elapsed time " << time_eigensolver << std::endl;
+
+    std::cout << "\n# N=" << n
+              << " M=" << m
+              << " ACCURACY=" << accuracy
+              << " TOL=" << tol
+              << " THRESHOLD=" << threshold
               << std::scientific
               << std::showpoint
-              << std::setprecision(2)
-              << eval[i]
-              << "  "
-              << eigenvalues_analytical[i]
-              << "  "
-              << eigenvalues_arpack[i]
-              << "  "
-              << eigenvalues_arpack2[i]
-              << "  "
-              << std::abs(eval[i] - eigenvalues_analytical[i])
-              << "  "
-              << std::abs(eval[i] - eigenvalues_arpack[i]) // @NOTE Shouldn't eval be compared
-                                                            // to eigenvalues_arpack2 instead?
-                                                            // They are both calculated for a given
-                                                            // tolerance. -> No, notice that both arpack
-                                                            // algorithms are the same, just the tolerance
-                                                            // value is reduced.
+              << std::setprecision(6)
+              << " ESARERROR=" << maxerror3
+              << " ARPERROR=" << maxerror
+              << " ESANERROR=" << maxerror2
+              << " TIMERATIO=" << time_eigensolver / time_arpack << " \\\\"
               << std::endl;
-  std::cout << ": eigensolver elapsed time " << time_eigensolver << std::endl;
-  double maxerror = 0.0;
-  for (int i = 0; i < eval.size(); i++)
-    maxerror = std::max(maxerror, std::abs(eval[i] - eigenvalues_arpack[i])); // @NOTE Same comment
-                                                                               // as above.
-  std::cout << "N_M_TOL_ESARERROR_ARPERROR_ESANERROR_TIMERATIO_ARPACKITER " << std::endl;
-  std::cout << n << " & "
-            << m << " & "
-            << tol << " & "
-            << maxerror << " & "
-            << maxerror2 << " & "
-            << maxerror3 << " & "
-            << time_eigensolver / time_arpack << " & "
-            << arpackIterations << " \\\\"
-            << std::endl;
+  }
+
+  if ( method == "gen")
+  {
+    printer(eval, eigenvalues_arpack, eigenvalues_arpack2, method, submethod);
+  }
+  else if ( method == "std")
+  {
+    printer(eval, eigenvalues_analytical, eigenvalues_arpack, method, submethod);
+  }
 
   return 0;
 }
@@ -738,7 +911,7 @@ int largest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
 int main(int argc, char **argv)
 {
   // Maybe initialize MPI
-  std::cout << "Hello World! This is dune-eigensolver." << std::endl;
+  std::cout << "# Hello World! This is dune-eigensolver." << std::endl;
   // DO NOT INITIALIZE MPI, it starts some threads!
   //  Dune::MPIHelper &helper = Dune::MPIHelper::instance(argc, argv);
   //  if (Dune::MPIHelper::isFake)
@@ -755,7 +928,7 @@ int main(int argc, char **argv)
 
   const int P = std::thread::hardware_concurrency();
   int numthreads = ptree.get<int>("parallel.numthreads");
-  std::cout << "hardware number of threads is " << P << " number of threads used is " << numthreads << std::endl;
+  std::cout << "# hardware number of threads is " << P << " number of threads used is " << numthreads << std::endl;
 
    Barrier barrier(numthreads);
    std::vector<std::thread> threads;
@@ -772,16 +945,10 @@ int main(int argc, char **argv)
   // for (int rank = 0; rank < numthreads - 1; ++rank)
   //   threads[rank].join();
 
-  // smallest_eigenvalues_convergence_test(ptree);
+  // matvec_performance_test(ptree);
 
-   largest_eigenvalues_convergence_test(ptree);
-   
-   // print test for analytical solution
-   // int m = ptree.get<int>("ev.m");
-   // std::vector<double> eig_test(m, 0.0);
-   // eig_test = eigenvalues_laplace_dirichlet_2d(m);
-   // for (auto &v: eig_test)
-   //   std::cout << v << std::endl;
+  std::cout << "# " << sizeof(int64_t) << " " << sizeof(long long) << std::endl;
+  smallest_eigenvalues_convergence_test(ptree);
 
   return 0;
 }

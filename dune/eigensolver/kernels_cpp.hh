@@ -2,6 +2,21 @@
 #define Udune_eigensolver_kernels_cpp_HH
 
 #include "umfpacktools.hh"
+#include "multivector.hh"
+
+template <typename MV>
+bool check_for_nan(const MV &Q)
+{
+  bool nan = false;
+  for (std::size_t i = 0; i < Q.cols(); i++)
+    for (std::size_t j = 0; j < Q.cols(); j++)
+      if (std::isnan(Q(i,j)))
+      {
+        nan = true;
+        break;
+      }
+  return nan;
+}
 
 //! simple dot product evaluation for comparison
 template <typename MV>
@@ -18,6 +33,20 @@ std::vector<std::vector<double>> dot_products_diagonal(const MV &Q)
       dp[i][j] = s;
     }
   return dp;
+}
+
+//! simple dot product evaluation for comparison
+template <typename MV>
+void dot_products_all_naive(std::vector<std::vector<double>> &dp, const MV &Q1, const MV &Q2)
+{
+  for (std::size_t i = 0; i < Q1.cols(); i++)
+    for (std::size_t j = 0; j < Q2.cols(); j++)
+    {
+      double s = 0.0;
+      for (std::size_t k = 0; k < dp.size(); k++)
+        s += Q1(k, i) * Q2(k, j);
+      dp[i][j] = s;
+    }
 }
 
 //! compute dot product of each column in Q1 with same column in Q2
@@ -153,6 +182,31 @@ void orthonormalize_naive(MV &Q)
     }
   }
 }
+// /** @brief Thin QR decomposition of a given MultiVector A w.r.t. matrix B
+// *
+// */
+// template <typename ISTLM, typename MV>
+// void B_orthonormalize_naive(const ISTLM &B, const MV &A)
+// {
+//   const std::size_t b = MV::blocksize;
+//   if (b != 1)
+//     throw std::invalid_argument("orthonormalize_naive: blocksize must be one");
+//   auto n = A.rows();
+//   auto m = A.cols();
+//   // auto a = &(A(0,0));
+//   MV<double, b> Q{n, m};
+//   MV<double, b> R{m, m};
+//   auto q = &(Q(0,0));
+//   auto r = &(R(0,0));
+
+//   for (int k = 0; k < m; ++k)
+//   {
+//     matmul_sparse_tallskinny_blocked( temp1, B, A[,k]);
+//     dot_products_all_blocked()
+//   }
+
+
+// }
 
 double bytes_orthonormalize_blocked(int n, int m, int b, int numbersize = 8)
 {
@@ -351,7 +405,8 @@ void orthonormalize_blocked(MV &Q)
 }
 
 /** @brief Orthogonalize a given MultiVector w.r.t. to scalar product given by sparse matrix B, block version for any block size relying on auto vectorization
- *
+ *  @TODO Thursday, 16. January 2025 at 05:41:35 has a bug! Vectors 16+ get populated with very large values (1e+15). Both the if-condition and else blocks produce
+ * the same bug!
  */
 template <typename ISTLM, typename MV>
 double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
@@ -400,48 +455,48 @@ double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
       for (std::size_t k = 0; k < b; ++k)
         s[k][j] = 0.0;
 
-    if (false)
+    if (true)
     {
-      // // orthogonalization of diagonal block
-      // for (std::size_t k = 0; k < b; ++k) // loop over all columns in this block
-      // {
-      //   // now we
-      //   // compute scalar products of vectors in the block (upper triangle)
-      //   T *qbk = q + nbk; // pointer to begin of block of vectors
-      //   T *pi = p;
-      //   for (std::size_t i = 0; i < n; ++i)
-      //   {
-      //     for (std::size_t j = k; j < b; ++j) // (m/b)*b*(b+1)/2   |  n*m*(b+1)/2
-      //       s[k][j] += pi[k] * qbk[j];
-      //     qbk += b;
-      //     pi += b;
-      //   }
-      //   for (std::size_t j = k + 1; j < b; ++j)
-      //     s[k][j] /= s[k][k];
-      //   s[k][k] = 1.0 / std::sqrt(s[k][k]);
-      //   for (std::size_t j = k + 1; j < b; ++j)
-      //     norm = std::max(norm, s[k][j]);
+      // orthogonalization of diagonal block
+      for (std::size_t k = 0; k < b; ++k) // loop over all columns in this block
+      {
+        // now we
+        // compute scalar products of vectors in the block (upper triangle)
+        T *qbk = q + nbk; // pointer to begin of block of vectors
+        T *pi = p;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+          for (std::size_t j = k; j < b; ++j) // (m/b)*b*(b+1)/2   |  n*m*(b+1)/2
+            s[k][j] += pi[k] * qbk[j];
+          qbk += b;
+          pi += b;
+        }
+        for (std::size_t j = k + 1; j < b; ++j)
+          s[k][j] /= s[k][k];
+        s[k][k] = 1.0 / std::sqrt(s[k][k]);
+        for (std::size_t j = k + 1; j < b; ++j)
+          norm = std::max(norm, s[k][j]);
 
-      //   // orthonormalize j>k with k and normalize
-      //   qbk = q + nbk;
-      //   for (std::size_t i = 0; i < n; ++i)
-      //   {
-      //     for (std::size_t j = k + 1; j < b; ++j) // n*m*(b+1)/2
-      //       qbk[j] -= s[k][j] * qbk[k];
-      //     qbk[k] *= s[k][k]; // normalization
-      //     qbk += b;
-      //   }
+        // orthonormalize j>k with k and normalize
+        qbk = q + nbk;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+          for (std::size_t j = k + 1; j < b; ++j) // n*m*(b+1)/2
+            qbk[j] -= s[k][j] * qbk[k];
+          qbk[k] *= s[k][k]; // normalization
+          qbk += b;
+        }
 
-      //   // update B*(block of vectors) in the same way
-      //   pi = p;
-      //   for (std::size_t i = 0; i < n; ++i)
-      //   {
-      //     for (std::size_t j = k + 1; j < b; ++j) // n*m*(b+1)/2
-      //       pi[j] -= s[k][j] * pi[k];
-      //     pi[k] *= s[k][k]; // normalization
-      //     pi += b;
-      //   }
-      // }
+        // update B*(block of vectors) in the same way
+        pi = p;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+          for (std::size_t j = k + 1; j < b; ++j) // n*m*(b+1)/2
+            pi[j] -= s[k][j] * pi[k];
+          pi[k] *= s[k][k]; // normalization
+          pi += b;
+        }
+      }
     }
     else
     {
@@ -590,6 +645,109 @@ double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
   return norm;
 }
 
+/** @brief multiply tall skinny matrix with dense matrix stored in a multivector with block size 1
+ *
+ */
+template <typename MV>
+void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const Eigen::MatrixXd &Se)
+{
+  std::size_t n = Qin.rows();
+  std::size_t m = Qin.cols();
+  
+  auto pin1 = &(Qin(0, 0));
+  auto pin2 = &(Se(0, 0));
+  auto pout = &(Qout(0, 0));
+
+  for (int l = 0; l < m * n; ++l)
+    pout[l] = 0.;
+
+  for (int j = 0; j < m; ++j)
+  {
+    for (auto k = 0; k < m; ++k)
+    {
+      for (int i = 0; i < n; ++i) // Traversing whole columns first
+        pout[j*n + i] += pin1[k*n + i] * pin2[j*m + k];
+    }
+  }
+}
+
+/** @brief multiply tall skinny matrix with dense matrix stored in a multivector
+ *
+ */
+template <typename MV>
+void matmul_tallskinny_dense_blocked(MV &Qout, const MV &Qin, const Eigen::MatrixXd &Se)
+{
+  std::size_t n = Qin.rows();
+  std::size_t m = Qin.cols();
+  std::size_t block_size = MV::blocksize;
+  auto pin1 = &(Qin(0, 0));
+  auto pin2 = &(Se(0, 0));
+  auto pout = &(Qout(0, 0));
+
+  std::fill(pout, pout + m * n, 0.0);
+  for (std::size_t bj = 0; bj < m; bj += block_size)  // Blocked loop for columns
+  {
+    for (std::size_t bk = 0; bk < m; bk += block_size)  // Blocked loop for columns of Se
+    {
+      for (std::size_t i = 0; i < n; ++i)  // Traversing rows
+      {
+        for (std::size_t j = 0; j < block_size; ++j)  // Inner block column loop
+        {
+          double sum = 0.0;
+          for (std::size_t k = 0; k < block_size; ++k)  // Inner block column loop for Se
+          {
+            if (bj + j < m && bk + k < m)
+              sum += pin1[(bk + k) * n + i] * pin2[(bj + j) * m + (bk + k)];
+          }
+          if (bj + j < m)
+            pout[(bj + j) * n + i] += sum;
+        }
+      }
+    }
+  }
+
+  // https://www.netlib.org/utk/papers/autoblock/node2.html
+  // for (std::size_t bi = 0; bi < n; bi += block_size)
+  // {
+  //   for (std::size_t bj = 0; bj < m; bj += block_size)
+  //   {
+  //     for (std::size_t bk = 0; bk < m; bk += block_size)
+  //     { 
+  //       for (std::size_t i = bi; i < std::min(bi+block_size-1,n); ++i)
+  //       {
+  //         for (std::size_t j = bj; j < std::min(bj+block_size-1,m); ++j)
+  //         {
+  //           for (std::size_t k = bk; k < std::min(bk+block_size-1,m); ++k)
+  //             Qout(i,j) += Qin(i,k) * Se(k,j);
+  //         }
+  //       }
+  //     }
+  //   }
+  //  
+
+  // // For each block
+  // for (std::size_t bj = 0; bj < m; bj += block_size)
+  // {
+  //   std::size_t nbj = n * bj;
+  //   std::size_t I = n * bj;
+  //   // For each row in each block
+  //   for (std::size_t i = 0; i < Se.rows(); ++i)
+  //   {
+  //     for (std::size_t j = 0; j < block_size; ++j)
+  //       pout[I + j] = 0.0;
+  //     // For each element in each row
+  //     for (std::size_t col_iter = 0; col_iter < Se.rows(); ++col_iter)
+  //     {
+  //       std::size_t J = nbj + col_iter * block_size;
+  //       for (std::size_t j = 0; j < block_size; ++j)
+  //         pout[I + j] += pin2[J + j] * pin1[J + j];
+  //     }
+  //     I += block_size;
+  //   }
+  // }
+
+}
+
 /** @brief multiply sparse matrix with tall skinny matrix stored in a multivector with block size 1
  *
  */
@@ -655,6 +813,77 @@ void matmul_sparse_tallskinny_blocked(MV &Qout, const ISTLM &A, const MV &Qin)
     }
   }
 }
+
+/** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
+* @TODO Is wrong! Need to implement a proper mat mat product. Look below!
+*/
+// template <typename MV>
+// double stopping_criterion(std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+//   std::size_t b = MV::blocksize;
+
+//   double partial = 0.0;
+//   double norm = 0.0;
+//   for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
+//     for (std::size_t i = 0; i < Q1.rows(); ++i)
+//       for (std::size_t j = 0; j < b; ++j)
+//         partial += (Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j))*(Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j));
+
+//   norm = std::sqrt(partial);
+//   return norm;
+// }
+
+/** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+// template <typename MV>
+// double stopping_criterion_test(double tol, std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+//   const std::size_t b = MV::blocksize;
+
+//   double partial = 0.0;
+//   double norm = 0.0;
+
+//   std::vector<std::vector<double>> D (Q1.cols(), std::vector<double> (Q2.cols(),0.0));
+//   dot_products_all_blocked(D, Q1, Q2);
+//   MultiVector<double, b> S{Q1.cols(), Q2.cols()};
+
+//   for (std::size_t i = 0; i < Q1.rows(); ++i)
+//     for (std::size_t j = 0; j < Q2.cols(); ++j)
+//       S(i,j) = D[i][j];
+
+//   matmul_sparse_tallskinny_blocked(D, Q1, S);
+
+//   for (std::size_t i = 0; i < Q1.rows(); ++i)
+//     for (std::size_t j = 0; j < Q2.cols(); ++j)
+//       partial += (D[i][j] - Q2(i,j))*(D[i][j] - Q2(i,j));
+//      partial += (Q1(i,j)*D[i][j] - Q2(i,j))*(Q1(i,j)*D[i][j] - Q2(i,j));
+//   norm = std::sqrt(partial);
+//   return norm;
+// }
+
+/** @brief Calculate the norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+// template <typename MV>
+// double stopping_criterion_offdiagonal(double tol, std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+//   std::size_t b = MV::blocksize;
+
+//   double partial_off = 0.0;
+//   double partial_diag = 0.0;
+//   double norm = 0.0;
+
+//   std::vector<std::vector<double>> Q2T (Q1.cols(), std::vector<double> (Q2.cols(),0.0));
+//   dot_products_all_blocked(Q2T,Q1, Q2);
+
+//   for (std::size_t i = 0; i < Q1.cols(); ++i)
+//     for (std::size_t j = 0; j < Q2.cols(); ++j)
+//       if (i == j)
+//         partial_diag += dp[i]*dp[i];
+//       else
+//         partial_off += Q2T[i][j]*Q2T[i][j];
+
+//   norm = std::sqrt(partial_off) - tol * std::sqrt(partial_diag);
+//   return norm;
+// }
 
 //! Apply inverse in factorized form; you may overwrite the input argument
 template <typename MV, typename MAT>
@@ -753,5 +982,7 @@ void matmul_inverse_tallskinny_blocked(MV &Qout, UMFPackFactorizedMatrix<MAT> &F
     }
   }
 }
+
+
 
 #endif
