@@ -16,119 +16,34 @@
 #include "kernels_neon.hh"
 #endif
 
-#include "arpack_geneo_wrapper.hh"
+//#include "arpack_geneo_wrapper.hh"
 
-/**  Randomized Eigensolver Package
- */
-
-/** \brief solve starndard eigenvalue problem to obtain largest eigenvalues
- */
-// @NOTE use power iteration for the largest eigval and orthogonal iteration for the n-largest eigenvalues
-// @NEXTSTEPS This is the power method 
+/**********************************
+ *
+ * Dune Eigensolver Package
+ *
+ **********************************/
+/** \brief solve standard eigenvalue problem with shift invert to obtain
+     smallest eigenvalues. Use the norm of the offdiagonal elements to stop.*/
 template <typename ISTLM, typename VEC>
-void StandardLargest(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
- {
-    // types
-    using block_type = typename ISTLM::block_type;
-
-   //set the compile-time known block sizes for convenience
-   const int b = 8;
-   const int br = block_type::rows;
-   const int bc = block_type::cols;
-   if (br != bc)
-     throw std::invalid_argument("StandardLargest: blocks of input matrix must be square");
-
-   // set the other sizes
-   const std::size_t n = A.N() * br;
-   const std::size_t m = ( nev / b + std::min(nev % b, 1)) * b; // make m the smallest possible multiple of the blocksize
-
-   // allocate the two sets of vectors to iterate upon
-   MultiVector<double, b> Q1{n, m};
-   MultiVector<double, b> Q2{n, m};
-
-   // initialize input vector with random numbers
-   std::mt19937 urbg{seed};
-   std::normal_distribution<double> generator{0.0, 1.0};
-   for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
-     for (std::size_t i = 0; i < Q1.rows(); ++i)
-       for (std::size_t j = 0; j < b; ++j)
-         Q1(i, bj + j) = generator(urbg);
-
-   // apply shift; !loop overwrites input matrix A!
-   // A = A + shift * I
-   if (shift != 0.0)
-   {
-     for (auto row_iter = A.begin(); row_iter != A.end(); ++row_iter)
-       for ( auto col_iter = row_iter->begin(); col_iter != row_iter->end(); ++col_iter)
-         if (row_iter.index() == col_iter.index())
-           for (int i = 0; i < br; i++)
-             (*col_iter)[i][i] += shift; 
-   }
-
-   // orthonormalize the columns before starting iterations
-   orthonormalize_blocked(Q1);
-
-   // storage for Rayleigh quotients
-   std::vector<double> s1(m, 0.0), s2(m, 0.0);
-
-   // do iterations
-   for (std::size_t k = 1; k < maxiter; ++k)
-   {
-     // Q2 = A*Q1
-     matmul_sparse_tallskinny_blocked(Q2, A, Q1);
-
-     // orthonormalize again
-     orthonormalize_blocked(Q2);
-
-     // compute Rayleigh quotients
-     matmul_sparse_tallskinny_blocked(Q1, A, Q2);
-     dot_products_diagonal_blocked(s1, Q2, Q1);
-     for (auto &x : s1)
-       x -= shift;
-     double distance = 0.0;
-     for (int i = 0; i < s1.size(); i++)
-       distance = std::max(distance, std::abs(s1[i] - s2[i]));
-     if (verbose > 0 && k > 1)
-       std::cout << "Iter=" << k << " " << distance << std::endl;
-     std::swap(s1, s2);
-
-     // exchange Q1 and Q2 for the next iteration
-     std::swap(Q1, Q2);
-
-     // @NOTE Stopping criterion can be improved
-     // We should think of a way to include the
-     // check for convergence to the true solution.
-     if (k > 1 && distance < tol)
-       break;
-   }
-
-   // store output
-   // assumes that output is allocated to the correct size
-   for (int j = 0; j < nev; ++j)
-     eval[j] = s2[j];
-   for (int j = 0; j < nev; ++j)
-     for (int i = 0; i < n; ++i)
-       evec[j][i] = Q1(i, j);
-}
-
-/**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
- */
-template <typename ISTLM, typename VEC>
-void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int StandardInverse(ISTLM &A, double shift, double tol, int maxiter,
+                                int nev, std::vector<double> &eval, 
+                                std::vector<VEC> &evec, int verbose = 0,
+                                unsigned int seed = 123, int stopperswitch=0)
 {
   // types
   using block_type = typename ISTLM::block_type;
 
   // set the compile-time known block sizes for convenience
   const int b = 8;
-  const int br = block_type::rows;
-  const int bc = block_type::cols;
-  if (br != bc)
-    throw std::invalid_argument("StandardInverse: blocks of input matrix must be square");
+  const int br = block_type::rows; // = 1
+  const int bc = block_type::cols; // = 1
+  if (br!=bc)
+    throw std::invalid_argument("StandardInverseOffDiagonal: blocks of input matrix must be square");
 
   // set the other sizes
   const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // make m the smallest possible  multiple of the blocksize
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; //= 32, make m the smallest possible  multiple of the blocksize
 
   // allocate the two sets of vectors to iterate upon
   MultiVector<double, b> Q1{n, m};
@@ -153,16 +68,24 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
   }
 
   // compute factorization of matrix
-  UMFPackFactorizedMatrix<ISTLM> F(A, 1);
+  // UMFPackFactorizedMatrix<ISTLM> F(A,1);
+  // compute factorization of matrix
+  Dune::Timer timer;
+  Dune::Timer timer_factorization;
+  UMFPackFactorizedMatrix<ISTLM> F(A, std::max(0, verbose - 1));
+  auto time_factorization = timer.elapsed();
 
   // orthonormalize the columns before starting iterations
   orthonormalize_blocked(Q1);
 
   // storage for Raleigh quotients
   std::vector<double> s1(m, 0.0), s2(m, 0.0);
+  std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(),0.0));
 
+  double initial_norm = 0.0;
+  int k = 0;
   // do iterations
-  for (std::size_t k = 1; k < maxiter; ++k)
+  for (k = 1; k < maxiter; ++k)
   {
     // Q2 = A^{-1}*Q1
     matmul_inverse_tallskinny_blocked(Q2, F, Q1); // apply inverse to all columns
@@ -171,30 +94,79 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
     orthonormalize_blocked(Q2);
 
     // compute raleigh quotients
+    // Q1 = A*Q2
     matmul_sparse_tallskinny_blocked(Q1, A, Q2);
+    // diag(D) = Q2^T * Q1
+    dot_products_all_blocked(Q2T,Q2, Q1);
     dot_products_diagonal_blocked(s1, Q2, Q1);
-    for (auto &x : s1)
-      x -= shift;
-    double distance = 0.0;
-    for (int i = 0; i < s1.size(); i++)
-      distance = std::max(distance, std::abs(s1[i] - s2[i]));
-    if (verbose > 0 && k > 1)
-      std::cout << "iter=" << k << " " << distance << std::endl;
-    std::swap(s1, s2);
+
+     double frobenius_norm = 0.0;
+     double partial_off = 0.0;
+     double partial_diag = 0.0;
+     if (stopperswitch == 0)
+        // || Q2T * Q1 ||i,j (i!=j)  - tol * ||Q2T * Q1||i,i;
+     {
+       // frobenius_norm = stopping_criterion_offdiagonal(tol, s1, Q2, Q1);
+      double norm = 0.0;
+      for (std::size_t i = 0; i < Q2.cols(); ++i)
+        for (std::size_t j = 0; j < Q1.cols(); ++j)
+          if (i == j)
+          {
+            partial_diag += Q2T[i][i] *Q2T[i][i];
+            // s1[i] = Q2T[i][i];
+          }
+          else
+            partial_off += Q2T[i][j]*Q2T[i][j];
+
+      if (verbose > 0)
+         std::cout << k << ": "<< partial_off << "; " << partial_diag << std::endl;
+
+      if (k > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+       break;
+     }
+     else if (stopperswitch == 2)
+        // || Q1 * diag(D) - Q2 ||;
+     {
+       double distance = 0.0;
+       for (int i = 0; i < s1.size(); i++)
+         distance = std::max(distance, std::abs(s1[i] - s2[i]));
+       if (verbose > 0 && k > 1)
+         std::cout << "iter=" << k << " " << distance << std::endl;
+       std::swap(s1, s2);
+
+       if (k == 1)
+         initial_norm = frobenius_norm;
+
+       if (k > 1 && distance < tol)
+         break;
+     }
 
     // exchange Q1 and Q2 for next iteration
     std::swap(Q1, Q2);
-
-    if (k > 1 && distance < tol)
-      break;
   }
-  // store output need to think about case when it did not converge
+
+  if (stopperswitch == 0 ){
+    for (auto &x : s1)
+     x-=shift;
+    for (int j = 0; j < nev; ++j)
+      std::cout << j << " " << s1[j] << std::endl;
+    for (int j = 0; j < nev; ++j)
+      eval[j] = s1[j];
+  }
+  else if (stopperswitch == 2){
+    for (auto &x : s2)
+     x-=shift;
+    for (int j = 0; j < nev; ++j)
+      std::cout << j << " " << s2[j] << std::endl;
+    for (int j = 0; j < nev; ++j)
+      eval[j] = s2[j];
+  }
+
   // assumes that output is allocated to the correct size
-  for (int j = 0; j < nev; ++j)
-    eval[j] = s2[j];
   for (int j = 0; j < nev; ++j)
     for (int i = 0; i < n; ++i)
       evec[j][i] = Q1(i, j);
+  return k;
 }
 
 /**  \brief solve standard eigenvalue problem with shift invert to obtain smallest eigenvalues
@@ -202,7 +174,10 @@ void StandardInverse(ISTLM &A, double shift, double tol, int maxiter, int nev, s
  * Implementation assumes that A and B have the same sparsity pattern
  */
 template <typename ISTLM, typename VEC>
-void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double reg, double tol, int maxiter, int nev, std::vector<double> &eval, std::vector<VEC> &evec, int verbose = 0, unsigned int seed = 123)
+int GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
+                        double reg, double tol, int maxiter, int nev,
+                        std::vector<double> &eval, std::vector<VEC> &evec,
+                        int verbose = 0, unsigned int seed = 123, int stopperswitch=0)
 {
   // copy matrix since we need to shift it
   ISTLM A(inA);
@@ -212,17 +187,17 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
 
   // set the compile-time known block sizes for convenience
   const int b = 8;
-  const int br = block_type::rows;
-  const int bc = block_type::cols;
+  const int br = block_type::rows; // = 1
+  const int bc = block_type::cols; // = 1
   if (br != bc)
-    throw std::invalid_argument("StandardInverse: blocks of input matrix must be square");
+    throw std::invalid_argument("GeneralizedInverse: blocks of input matrix must be square");
 
   // measure time
   Dune::Timer timer;
 
   // set the other sizes
   const std::size_t n = A.N() * br;
-  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // make m the smallest possible  multiple of the blocksize
+  const std::size_t m = (nev / b + std::min(nev % b, 1)) * b; // = 32, make m the smallest possible  multiple of the blocksize
 
   // allocate the two sets of vectors to iterate upon
   MultiVector<double, b> Q1{n, m};
@@ -258,6 +233,7 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
 
   // B-orthonormalize and initialize Raleigh coefficients
   std::vector<double> ra1(m, 0.0), ra2(m, 0.0), sA(m, 0.0);
+  std::vector<std::vector<double>> Q2T (Q2.cols(), std::vector<double> (Q1.cols(),0.0));
 #if defined(NEONINCLUDE)
   B_orthonormalize_neon_b8(B, Q1);
   matmul_sparse_tallskinny_neon_b8(Q2, A, Q1);
@@ -274,10 +250,9 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
   for (int i = 0; i < m; ++i)
     ra2[i] = sA[i] - shift;
 
-  if (verbose > 2)
-    show(ra2);
 
   // do iterations
+  double initial_norm = 0.0;
   int iter = 0;
   double relerror;
   while (iter < maxiter)
@@ -306,29 +281,62 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
     dot_products_diagonal_avx2_b8(sA, Q2, Q1);
 #else
     matmul_sparse_tallskinny_blocked(Q2, A, Q1);
+    dot_products_all_blocked(Q2T,Q2, Q1);
     dot_products_diagonal_blocked(sA, Q2, Q1);
 #endif
-    for (int i = 0; i < m; ++i)
-      ra1[i] = sA[i] - shift;
-    if (verbose > 2)
-      show(ra1);
-    relerror = 0.0;
-    for (int i = 0; i < m; ++i)
-      relerror = std::max(relerror, std::abs(ra1[i] - ra2[i]));
-    auto result = std::max_element(ra1.begin(), ra1.end());
-    relerror /= *result;
-    if (verbose > 2)
-      std::cout << "iter=" << iter << " relerror=" << relerror << std::endl;
-    std::swap(ra1, ra2);
-    if (iter>10 & relerror < tol)
-      break;
+
+    double frobenius_norm = 0.0;
+    double partial_off = 0.0;
+    double partial_diag = 0.0;
+    if (stopperswitch == 0)
+    {
+      double norm = 0.0;
+      for (std::size_t i = 0; i < Q2.cols(); ++i)
+        for (std::size_t j = 0; j < Q1.cols(); ++j)
+          if (i == j)
+          {
+            partial_diag += Q2T[i][i] *Q2T[i][i];
+            //s1[i] = Q2T[i][i];
+          }
+          else
+            partial_off += Q2T[i][j]*Q2T[i][j];
+
+      if (verbose > 2)
+        std::cout << iter << ": " << partial_off << "; " << partial_diag << std::endl;
+
+      if (iter > 1 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+        break;
+    }
+    else if (stopperswitch == 2)
+    {
+      for (int i = 0; i < m; ++i)
+        ra1[i] = sA[i] - shift;
+      if (verbose > 2)
+        show(ra1);
+
+      relerror = 0.0;
+      for (int i = 0; i < m; ++i)
+        relerror = std::max(relerror, std::abs(ra1[i] - ra2[i]));
+      auto result = std::max_element(ra1.begin(), ra1.end());
+      relerror /= *result;
+      if (verbose > 2)
+        std::cout << "iter=" << iter << " relerror=" << relerror << std::endl;
+      std::swap(ra1, ra2);
+      if (iter>10 & relerror < tol)
+        break;
+    }
+
   }
 
-  // store output need to think about case when it did not converge
+  for (int i = 0; i < m; ++i)
+    ra1[i] = sA[i] - shift;
+  if (verbose > 2)
+    show(ra1);
+
   if (eval.size() != nev)
     eval.resize(nev);
   for (int j = 0; j < nev; ++j)
-    eval[j] = ra2[j];
+    eval[j] = ra1[j];
 
   if (evec.size() != nev)
     evec.resize(nev);
@@ -346,8 +354,8 @@ void GeneralizedInverse(const ISTLM &inA, const ISTLM &B, double shift, double r
               << " time_total=" << time
               << " time_factorization=" << time_factorization
               << " iterations=" << iter
-              << " relerror=" << relerror
               << std::endl;
+  return iter;
 }
 
 #endif // Udune_eigensolver_HH
