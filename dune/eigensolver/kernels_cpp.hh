@@ -2,6 +2,7 @@
 #define Udune_eigensolver_kernels_cpp_HH
 
 #include "umfpacktools.hh"
+#include "multivector.hh"
 
 //! simple dot product evaluation for comparison
 template <typename MV>
@@ -18,6 +19,20 @@ std::vector<std::vector<double>> dot_products_diagonal(const MV &Q)
       dp[i][j] = s;
     }
   return dp;
+}
+
+//! simple dot product evaluation for comparison
+template <typename MV>
+void dot_products_all_naive(std::vector<std::vector<double>> &dp, const MV &Q1, const MV &Q2)
+{
+  for (std::size_t i = 0; i < Q1.cols(); i++)
+    for (std::size_t j = 0; j < Q2.cols(); j++)
+    {
+      double s = 0.0;
+      for (std::size_t k = 0; k < dp.size(); k++)
+        s += Q1(k, i) * Q2(k, j);
+      dp[i][j] = s;
+    }
 }
 
 //! compute dot product of each column in Q1 with same column in Q2
@@ -590,6 +605,33 @@ double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
   return norm;
 }
 
+/** @brief multiply tall skinny matrix with dense matrix stored in a multivector with block size 1
+ *
+ */
+template <typename MV>
+void matmul_tallskinny_dense_naive(MV &Qout, const MV &Qin, const MV &Se)
+{
+  std::size_t n = Qin.rows();
+  std::size_t m = Qin.cols();
+  auto pin1 = &(Qin(0, 0));
+  auto pin2 = &(Se(0, 0));
+  auto pout = &(Qout(0, 0));
+
+  for (int j = 0; j < m; j++)
+  {
+    for (auto row_iter = 0; row_iter < m; ++row_iter)
+    {
+      auto i = row_iter;
+      pout[i] = 0.0;
+      for (auto col_iter = 0; col_iter < m; ++col_iter)
+        pout[i] += pin1[col_iter] * pin2[col_iter];
+    }
+    pin1 += n;
+    pin2 += m;
+    pout += n;
+  }
+}
+
 /** @brief multiply sparse matrix with tall skinny matrix stored in a multivector with block size 1
  *
  */
@@ -655,6 +697,77 @@ void matmul_sparse_tallskinny_blocked(MV &Qout, const ISTLM &A, const MV &Qin)
     }
   }
 }
+
+/** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
+* @TODO Is wrong! Need to implement a proper mat mat product. Look below!
+*/
+// template <typename MV>
+// double stopping_criterion(std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+//   std::size_t b = MV::blocksize;
+
+//   double partial = 0.0;
+//   double norm = 0.0;
+//   for (std::size_t bj = 0; bj < Q1.cols(); bj += b)
+//     for (std::size_t i = 0; i < Q1.rows(); ++i)
+//       for (std::size_t j = 0; j < b; ++j)
+//         partial += (Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j))*(Q1(i, bj+j)*dp[bj+j] - Q2(i,bj+j));
+
+//   norm = std::sqrt(partial);
+//   return norm;
+// }
+
+/** @brief Calculate the Euclidean norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+// template <typename MV>
+// double stopping_criterion_test(double tol, std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+//   const std::size_t b = MV::blocksize;
+
+//   double partial = 0.0;
+//   double norm = 0.0;
+
+//   std::vector<std::vector<double>> D (Q1.cols(), std::vector<double> (Q2.cols(),0.0));
+//   dot_products_all_blocked(D, Q1, Q2);
+//   MultiVector<double, b> S{Q1.cols(), Q2.cols()};
+
+//   for (std::size_t i = 0; i < Q1.rows(); ++i)
+//     for (std::size_t j = 0; j < Q2.cols(); ++j)
+//       S(i,j) = D[i][j];
+
+//   matmul_sparse_tallskinny_blocked(D, Q1, S);
+
+//   for (std::size_t i = 0; i < Q1.rows(); ++i)
+//     for (std::size_t j = 0; j < Q2.cols(); ++j)
+//       partial += (D[i][j] - Q2(i,j))*(D[i][j] - Q2(i,j));
+//      partial += (Q1(i,j)*D[i][j] - Q2(i,j))*(Q1(i,j)*D[i][j] - Q2(i,j));
+//   norm = std::sqrt(partial);
+//   return norm;
+// }
+
+/** @brief Calculate the norm of the resulting eigenvectors in order to measure the convergence to solution.
+ *
+*/
+// template <typename MV>
+// double stopping_criterion_offdiagonal(double tol, std::vector<double> &dp,const MV &Q1, const MV &Q2) {
+//   std::size_t b = MV::blocksize;
+
+//   double partial_off = 0.0;
+//   double partial_diag = 0.0;
+//   double norm = 0.0;
+
+//   std::vector<std::vector<double>> Q2T (Q1.cols(), std::vector<double> (Q2.cols(),0.0));
+//   dot_products_all_blocked(Q2T,Q1, Q2);
+
+//   for (std::size_t i = 0; i < Q1.cols(); ++i)
+//     for (std::size_t j = 0; j < Q2.cols(); ++j)
+//       if (i == j)
+//         partial_diag += dp[i]*dp[i];
+//       else
+//         partial_off += Q2T[i][j]*Q2T[i][j];
+
+//   norm = std::sqrt(partial_off) - tol * std::sqrt(partial_diag);
+//   return norm;
+// }
 
 //! Apply inverse in factorized form; you may overwrite the input argument
 template <typename MV, typename MAT>
@@ -753,5 +866,7 @@ void matmul_inverse_tallskinny_blocked(MV &Qout, UMFPackFactorizedMatrix<MAT> &F
     }
   }
 }
+
+
 
 #endif

@@ -50,7 +50,7 @@ public:
     n = n_;
     m = m_;
     p = new (std::align_val_t{64}) T[n * m]();
-    std::cout << "  p=" << p << std::endl;
+    // std::cout << "  p=" << p << std::endl;
   }
 
   // copy constructor with deep copy
@@ -135,6 +135,7 @@ public:
   //! const array access
   const T &operator()(std::size_t i, std::size_t j) const
   {
+    // std::cout << ((j / blocksize) * n + i) * blocksize + (j % blocksize) << std::endl;
     return p[((j / blocksize) * n + i) * blocksize + (j % blocksize)];
   }
 
