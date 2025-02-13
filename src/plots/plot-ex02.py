@@ -4,7 +4,7 @@ import numpy as np
 from labellines import labelLine, labelLines
 plt.rcParams['text.usetex'] = True
 plt.rcParams["figure.figsize"] = (11.69,8.27)
-# plt.rcParams['figure.constrained_layout.use'] = True
+plt.rcParams['figure.constrained_layout.use'] = True
 
 # Export data
 def plot_convergence_ratio(ax, status, n, nev, acc, submethod, matrix):
