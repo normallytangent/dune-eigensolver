@@ -721,8 +721,8 @@ int smallest_eigenvalues_convergence_test(const Dune::ParameterTree &ptree)
     if (grid == "checkerboard")
     {
       // B = get_identity(ceil(sqrt(A.N()))); // Standard eigenvalue problem for debugging
-      A = readMatrixFromMatlab("./src_dir/checkerboard-gevps/aharmonic_gevp_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
-      B = readMatrixFromMatlab("./src_dir/checkerboard-gevps/aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
+      A = readMatrixFromMatlab("./src_dir/sampler/matrices/checkerboard-gevps/aharmonic_gevp_Ahat2_subdomain_" + std::to_string(subdomain) + ".txt");
+      B = readMatrixFromMatlab("./src_dir/sampler/matrices/checkerboard-gevps/aharmonic_gevp_Bhat2_subdomain_" + std::to_string(subdomain) + ".txt", A.N());
       std::cout << "\n#" " grid: " << grid << " N: " << N << ":    " << ceil(sqrt(A.N())) << ":    " << A.N() <<std::endl;
     }
     else if (grid == "coord")
