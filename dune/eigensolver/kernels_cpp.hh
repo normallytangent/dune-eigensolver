@@ -405,8 +405,7 @@ void orthonormalize_blocked(MV &Q)
 }
 
 /** @brief Orthogonalize a given MultiVector w.r.t. to scalar product given by sparse matrix B, block version for any block size relying on auto vectorization
- *  @TODO Thursday, 16. January 2025 at 05:41:35 has a bug! Vectors 16+ get populated with very large values (1e+15). Both the if-condition and else blocks produce
- * the same bug!
+ *
  */
 template <typename ISTLM, typename MV>
 double B_orthonormalize_blocked(const ISTLM &B, MV &Q)
