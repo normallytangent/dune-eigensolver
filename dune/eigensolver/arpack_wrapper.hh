@@ -5,8 +5,8 @@
 
 // copy-paste from the dune-pdelab geneo_nonovlp branch
 
-#ifndef DUNE_EIGENSOLVER_GENEO_ARPACK_GENEO_HH
-#define DUNE_EIGENSOLVER_GENEO_ARPACK_GENEO_HH
+#ifndef DUNE_EIGENSOLVER_ARPACK_WRAPPER_HH
+#define DUNE_EIGENSOLVER_ARPACK_WRAPPER_HH
 
 #if HAVE_ARPACKPP
 
@@ -22,9 +22,7 @@
 #include <dune/common/fvector.hh>    // provides Dune::FieldVector
 #include <dune/common/exceptions.hh> // provides DUNE_THROW(...)
 
-//#if DUNE_VERSION_GTE(DUNE_ISTL, 2, 9)
 #include <dune/istl/blocklevel.hh>
-//#endif
 #include <dune/istl/bvector.hh>       // provides Dune::BlockVector
 #include <dune/istl/istlexception.hh> // provides Dune::ISTLError
 #include <dune/istl/io.hh>            // provides Dune::printvector(...)
@@ -38,12 +36,12 @@
               // ARPACK++ provides a class with a method called
               // Status)
 #endif
+#include "arssym.h"  // provides ARSymStdEig
 #include "argsym.h"  // provides ARSymGenEig
-#include "argnsym.h" // provides ARSymGenEig
-#include "arsnsym.h" // this provides the one we need
-#include "arssym.h"  // this provides the one we need
 
-namespace ArpackMLGeneo
+// @NOTE We still need the arpack in order to compare our results, especially in the
+// case of geneo where there is no analytical solution.
+namespace ArpackEigensolver
 {
 
   /**
@@ -76,13 +74,8 @@ namespace ArpackMLGeneo
           a_(A_.M() * mBlock), n_(A_.N() * nBlock)
     {
       // assert that BCRSMatrix type has blocklevel 2
-//#if DUNE_VERSION_LT(DUNE_ISTL, 2, 9)
-//      static_assert(BCRSMatrix::blocklevel == 2,
-//                    "Only BCRSMatrices with blocklevel 2 are supported.");
-//#else
       static_assert(Dune::blockLevel<BCRSMatrix>() == 2,
                     "Only BCRSMatrices with blocklevel 2 are supported.");
-//#endif
       // allocate memory for auxiliary block vector objects
       // which are compatible to matrix rows / columns
       domainBlockVector.resize(A_.N());
@@ -208,7 +201,7 @@ namespace ArpackMLGeneo
     // compatible to matrix rows / columns
     mutable DomainBlockVector domainBlockVector;
     mutable RangeBlockVector rangeBlockVector;
-  };
+  }; // class APP_BCRSMatMul_OwnShiftMode.
 
   /**
    * \brief Wrapper for a DUNE-ISTL BCRSMatrix which can be used
@@ -240,10 +233,6 @@ namespace ArpackMLGeneo
           a_(A_.M() * mBlock), n_(A_.N() * nBlock)
     {
       // assert that BCRSMatrix type has blocklevel 2
-//#if DUNE_VERSION_LT(DUNE_ISTL, 2, 9)
-//      static_assert(BCRSMatrix::blocklevel == 2,
-//                    "Only BCRSMatrices with blocklevel 2 are supported.");
-//#else
       static_assert(Dune::blockLevel<BCRSMatrix>() == 2,
                     "Only BCRSMatrices with blocklevel 2 are supported.");
 //#endif
@@ -368,7 +357,7 @@ namespace ArpackMLGeneo
     // compatible to matrix rows / columns
     mutable DomainBlockVector domainBlockVector;
     mutable RangeBlockVector rangeBlockVector;
-  };
+  }; // class APP_BCRSMatMul_GeneralizedShiftInvertMode.
 
   /**
    * \brief A modified version of the corresponding ISTL class supporting
@@ -415,18 +404,18 @@ namespace ArpackMLGeneo
      */
     ArPackPlusPlus_Algorithms(const BCRSMatrix &m,
                               const unsigned int nIterationsMax = 100000,
-                              const unsigned int verbosity_level = 0)
+                              const int verbosity_level = 0)
         : a_(m), nIterationsMax_(nIterationsMax),
           verbosity_level_(verbosity_level),
           nIterations_(0),
-          title_("    ArPackPlusPlus_Algorithms: "),
+          title_("#   ArPackPlusPlus_Algorithms: "),
           blank_(title_.length(), ' ')
     {
     }
 
-    //! Solve GEVP as standard problem with own shift invert
-    inline void computeStdNonSymMinMagnitude(const BCRSMatrix &b_, const Real &epsilon,
-                                             std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
+    //! Solve standard problem with own shift invert
+    inline void computeStdSymMinMagnitude(const BCRSMatrix &b_, const Real &epsilon,
+                                            std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
     {
       // print verbosity information
       if (verbosity_level_ > 0)
@@ -444,7 +433,7 @@ namespace ArpackMLGeneo
       const bool ivec = true;                  // Flag deciding if eigenvectors shall be determined
 
       BCRSMatrix ashiftb(a_);
-      ashiftb.axpy(-sigma, b_);
+      ashiftb.axpy(sigma, b_);
 
       // use type ArPackPlusPlus_BCRSMatrixWrapperGen to store matrix information
       // and to perform the product (A-sigma B)^-1 v (LU decomposition is not used)
@@ -463,8 +452,8 @@ namespace ArpackMLGeneo
       // define what we need: eigenvalues with smallest magnitude
       char which[] = "LM";
 
-      // Solve problem as a standard EV problem with own shift_invert
-      ARNonSymStdEig<Real, WrappedMatrix> dprob(nrows, nev, &A, &WrappedMatrix::multMv, which, ncv, tol, maxit);
+      // Solve problem as a standard EV problem
+      ARSymStdEig<Real, WrappedMatrix> dprob(nrows, nev, &A, &WrappedMatrix::multMv, -sigma, which, ncv, tol, maxit);
 
       // set ARPACK verbosity mode if requested
       if (verbosity_level_ > 3)
@@ -475,85 +464,6 @@ namespace ArpackMLGeneo
       auto ev_data = ev.data();
       auto ev_imag_data = ev_imag.data();
       dprob.Eigenvalues(ev_data, ev_imag_data, ivec);
-
-      // Get sorting permutation for un-shifted eigenvalues
-      std::vector<int> index(nev, 0);
-      std::iota(index.begin(), index.end(), 0);
-
-      std::sort(index.begin(), index.end(),
-                [&](const int &a, const int &b)
-                {
-                  return (sigma + 1. / ev[a] < sigma + 1. / ev[b]);
-                });
-
-      // Unshift eigenpairs
-      for (int i = 0; i < nev; i++)
-      {
-        lambda[i] = sigma + 1. / ev[index[i]];
-        Real *x_raw = dprob.RawEigenvector(index[i]);
-        WrappedMatrix::arrayToDomainBlockVector(x_raw, x[i]);
-      }
-
-      // obtain number of Arnoldi update iterations actually taken
-      nIterations_ = dprob.GetIter();
-    }
-
-    //! Solve GEVP in shift invert mode
-    inline void computeGenNonSymShiftInvertMinMagnitude(const BCRSMatrix &b_, const Real &epsilon,
-                                                        std::vector<BlockVector> &x, std::vector<Real> &lambda, Real sigma) const
-    {
-      // print verbosity information
-      if (verbosity_level_ > 0)
-        std::cout << title_ << "Computing an approximation of the "
-                  << "least dominant eigenvalue of a matrix which "
-                  << "is assumed to be symmetric." << std::endl;
-
-      // allocate memory for variables, set parameters
-      const int nev = x.size();                // Number of eigenvalues to compute
-      const int ncv = 0;                       // Number of Arnoldi vectors generated at each iteration (0 == auto)
-      const Real tol = epsilon;                // Stopping tolerance (relative accuracy of Ritz values) (0 == machine precision)
-      const int maxit = nIterationsMax_ * nev; // Maximum number of Arnoldi update iterations allowed   (0 == 100*nev)
-      auto ev = std::vector<Real>(nev);        // Computed generalized eigenvalues
-      auto ev_imag = std::vector<Real>(nev);   // Computed generalized eigenvalues
-      const bool ivec = true;                  // Flag deciding if eigenvectors shall be determined
-
-      BCRSMatrix ashiftb(a_);
-      ashiftb.axpy(-sigma, b_);
-
-      // use type ArPackPlusPlus_BCRSMatrixWrapperGen to store matrix information
-      // and to perform the product (A-sigma B)^-1 v (LU decomposition is not used)
-      typedef APP_BCRSMatMul_GeneralizedShiftInvertMode<BCRSMatrix> WrappedMatrix;
-      WrappedMatrix A(ashiftb, b_);
-
-      // get number of rows and columns in A
-      const int nrows = A.nrows();
-      const int ncols = A.ncols();
-
-      // assert that A is square
-      if (nrows != ncols)
-        DUNE_THROW(Dune::ISTLError, "Matrix is not square ("
-                                        << nrows << "x" << ncols << ").");
-
-      // define what we need: eigenvalues with smallest magnitude
-      char which[] = "LM";
-
-      // Solve problem as a standard EV problem with own shift_invert
-      ARNonSymGenEig<Real, WrappedMatrix, WrappedMatrix>
-          dprob(nrows, nev, &A, &WrappedMatrix::multMv, &A, &WrappedMatrix::multMvB, sigma, which, ncv, tol, maxit);
-
-      // set ARPACK verbosity mode if requested
-      if (verbosity_level_ > 3)
-        dprob.Trace();
-
-      // find eigenvalues and eigenvectors of A
-      // The broken interface of ARPACK++ actually wants a reference to a pointer...
-      auto ev_data = ev.data();
-      auto ev_imag_data = ev_imag.data();
-      dprob.Eigenvalues(ev_data, ev_imag_data, ivec);
-
-      // std::cout << "raw eigenvalues from APP:" << std::endl;
-      // for (int i=0; i<nev; i++)
-      // 	std::cout << i << ": " << ev[i] << std::endl;
 
       // Get sorting permutation for un-shifted eigenvalues
       std::vector<int> index(nev, 0);
@@ -598,7 +508,7 @@ namespace ArpackMLGeneo
 
       // make shift matrix to be inverted
       BCRSMatrix ashiftb(a_);
-      ashiftb.axpy(-sigma, b_);
+      ashiftb.axpy(sigma, b_);
 
       // use type ArPackPlusPlus_BCRSMatrixWrapperGen to store matrix information
       // and to perform the product (A-sigma B)^-1 v (LU decomposition is not used)
@@ -619,7 +529,7 @@ namespace ArpackMLGeneo
 
       // Solve problem as a standard EV problem with own shift_invert
       ARSymGenEig<Real, WrappedMatrix, WrappedMatrix>
-          dprob('S', nrows, nev, &A, &WrappedMatrix::multMv, &A, &WrappedMatrix::multMvB, sigma, which, ncv, tol, maxit);
+          dprob('S', nrows, nev, &A, &WrappedMatrix::multMv, &A, &WrappedMatrix::multMvB, -sigma, which, ncv, tol, maxit);
 
       // set ARPACK verbosity mode if requested
       if (verbosity_level_ > 3)
@@ -760,16 +670,16 @@ namespace ArpackMLGeneo
         {
           // we are happy or cannot increase
           finished = true;
-          if (nev < x.size())
-          {
-            lambda.resize(nev);
-            x.resize(nev);
-          }
-          return;
+          break;
         }
 
         // ok, not satisfied; increase nev and provide an initial guess
         nev = std::min((int)x.size(), (int)(nev * 1.3));
+      }
+      if (nev < x.size())
+      {
+        lambda.resize(nev);
+        x.resize(nev);
       }
     }
 
@@ -791,7 +701,7 @@ namespace ArpackMLGeneo
     const unsigned int nIterationsMax_;
 
     // verbosity setting
-    const unsigned int verbosity_level_;
+    const int verbosity_level_;
 
     // memory for storing temporary variables (mutable as they shall
     // just be effectless auxiliary variables of the const apply*(...)
@@ -801,10 +711,10 @@ namespace ArpackMLGeneo
     // constants for printing verbosity information
     const std::string title_;
     const std::string blank_;
-  };
+  }; // class ArpackPlusPlus_Algorithms.
 
 } // namespace Dune
 
 #endif // HAVE_ARPACKPP
 
-#endif // DUNE_PDELAB_BACKEND_ISTL_GENEO_ARPACK_GENEO_HH
+#endif // DUNE_EIGENSOLVER_ARPACK_WRAPPER_HH

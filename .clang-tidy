@@ -1,0 +1,6 @@
+---
+Checks:          '*,-fuchsia-*,-modernize-use-trailing-return-type,-llvm*,-clang-diagnostic-c++17-extensions,-hicpp-exception-baseclass'
+# WarningsAsErrors: '*'
+HeaderFilterRegex: ''
+FormatStyle:     none
+
