@@ -1,6 +1,6 @@
-# Create a local spack environment for testing dune-eigensolver on Milan.
-1. Create a local directory, spack-env and copy the commands below to `spack-env/spack.yaml` file.
-2. The comands describe a set of packages to be installed, along with configuration settings.
+# Spack environment
+Setting up a local spack enviroment for dune-eigensolver on Milan. The packages' versions correspond to the dependency of the repository as on the branch `develop`.
+1. Create a local directory, spack-env and copy the commands below to `spack-env/spack.yaml` file. The comands describe a set of packages to be installed, along with configuration settings.
 ```
 spack:
   # add package specs to the `specs` list
@@ -17,11 +17,11 @@ spack:
   concretizer:
     unify: false
 ```
-3. Install spack environment
+2. Install spack environment
 ```
 $ spack env activate --create /path/to/spack-env
 ```
-4. To load the environment on next login
+3. To load the environment on next login
 ```
 $ spacktivate /path/to/spack-env
 ```
