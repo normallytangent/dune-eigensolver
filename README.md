@@ -61,28 +61,27 @@ The installation of dune-eigensolver maintains an out-of-source build in order t
 $ mkdir -p DUNE/external && cd DUNE/external
 ```
 2. Resolve all the dependencies, and clone and install VCL, Eigen inside `external/`.
+3. Return to `DUNE/`and set some CMake variables and compiler flags in a file `release.opts`, or optionally through the variable `$OPTSFILE`. Modify the paths as needed. 
 ```
-$ cd .. && touch release.opts
-```
-3. Set some flags in `release.opts`
-```
-$ echo " CMAKE_FLAGS="\"
+CMAKE_FLAGS="
     -DCMAKE_CXX_FLAGS_RELEASE='-O3 -DNDEBUG -g0 -funroll-loops -ftemplate-depth=5120 -march=native -Wa,-q'
     -DCMAKE_BUILD_TYPE=Release
     -DDUNE_SYMLINK_TO_SOURCE_TREE=1
     -DDUNE_ENABLE_PYTHONBINDINGS=NO
     -DARPACKPP_INCLUDE_DIR=/path/to/arpackpp/include/arpackpp/
     -DVCL_ROOT=/path/to/vcl
-    -DEIGEN_ROOT=/path/to/eigen/include/eigen3/Eigen"\"
-  " >> release.opts
+    -DEIGEN_ROOT=/path/to/eigen/include/eigen3/Eigen
+  "
 ```
+
 4. Clone dune-common, dune-istl
-5a. Clone dune-eigensolver.
+
+5. Clone dune-eigensolver
 ```
 $ git clone https://github.com/normallytangent/dune-eigensolver.git
 ```
 
-5b.Optionally,  If you want to test dune-eigensolver with the Aharmonic subdomains, clone also the submodule Sampler under `dune-eigensolver/src/sampler`. Please note that because of the matrices, Sampler can get quite large.
+Optionally,  If you want to test dune-eigensolver with the Aharmonic subdomains, clone also the submodule Sampler under `dune-eigensolver/src/sampler`. Please note that because of the matrices, Sampler can get quite large.
 ```
 $ submodule update --init --recursive
 ```
@@ -113,12 +112,12 @@ for further options.
 The full build system is described in the dune-common/doc/buildsystem (Git version) or under share/doc/dune-common/buildsystem if you installed DUNE!
 
 
-Example run
-===========
+<!-- Example run -->
+<!-- =========== -->
 
-Links
+<!-- Links
 -----
 [VCL]: https://github.com/vectorclass/version2 
 [Eigen]: https://eigen.tuxfamily.org/
 [ARPACK-NG]: https://github.com/opencollab/arpack-ng
-[ARPACK++]: https://github.com/m-reuter/arpackpp
+[ARPACK++]: https://github.com/m-reuter/arpackpp -->
