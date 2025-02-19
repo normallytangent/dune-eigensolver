@@ -301,8 +301,27 @@ void GeneralizedInverse(ISTLM &inA, const ISTLM &B, double shift,
       std::cout << "# iter: " << iter << " norm_off: "<< std::sqrt(partial_off) << " norm_diag: " << std::sqrt(partial_diag)
       << " initial_norm_off: " << std::sqrt(initial_partial_off) << "\n";
 
-    if ( iter > 0 && std::sqrt(partial_off) < tol * std::sqrt(initial_partial_off))
-      break;
+    if (stopperswitch == 2)
+    {
+      // || Q2T ||i,j (i!=j) < tol * ||Q2T||i,j (i!=j), iter == 0;
+      if ( iter > 0 && std::sqrt(partial_off) < tol * std::sqrt(initial_partial_off))
+        break;
+    }
+    else if (stopperswitch == 1)
+    {
+      // || Q2T ||i,j (i!=j) <  tol * ||Q2T ||i,i;
+      if ( iter > 0 && std::sqrt(partial_off) < tol * std::sqrt(partial_diag))
+        break;
+    }
+    // else if (stopperswitch == 0)
+    // {
+    //   // || A * Q - Q * D|| < tol;
+    //    Q2 - Q1 * Q2T
+    // }
+    // else if ( stopperswitch == -1)
+    // {
+    //   // Ftworth
+    // }
 
   iter += 1;
   }
